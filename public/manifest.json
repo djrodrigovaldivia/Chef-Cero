@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Chef Cero: Mi Asistente de Voz y Mentor Culinario Inteligente",
+  "short_name": "Chef Cero",
+  "description": "Asistente culinario interactivo con voz en vivo, mentoría paso a paso y temporizadores con alertas push en segundo plano.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#f59e0b",
+  "background_color": "#fffbeb",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

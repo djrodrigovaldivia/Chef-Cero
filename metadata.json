@@ -1,0 +1,6 @@
+{
+  "name": "Chef Cero: Mi Asistente de Voz y Mentor Culinario Inteligente",
+  "description": "Asistente culinario interactivo con voz en vivo, mentoría paso a paso para principiantes, recetas fáciles, económicas (BBB) y del mundo (chilena, mexicana, asiática, italiana, española, francesa).",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

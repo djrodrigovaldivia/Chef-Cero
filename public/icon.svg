@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="50%" stop-color="#ea580c" />
+      <stop offset="100%" stop-color="#dc2626" />
+    </linearGradient>
+    <linearGradient id="hat-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#fef3c7" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded rect -->
+  <rect width="512" height="512" rx="112" fill="url(#bg-grad)" />
+
+  <!-- Inner glow circle -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6" />
+
+  <!-- Chef Hat Shape -->
+  <g filter="url(#shadow)" transform="translate(0, -10)">
+    <!-- Base band of hat -->
+    <path d="M176 340 L336 340 C344 340 350 348 348 356 L342 384 C340 392 334 398 326 398 L186 398 C178 398 172 392 170 384 L164 356 C162 348 168 340 176 340 Z" fill="url(#hat-grad)" />
+    
+    <!-- Hat band ribbon / detail -->
+    <path d="M168 370 L344 370" stroke="#f59e0b" stroke-width="5" stroke-linecap="round" />
+
+    <!-- Hat Puffs -->
+    <!-- Center Puff -->
+    <circle cx="256" cy="220" r="75" fill="url(#hat-grad)" />
+    <!-- Left Puff -->
+    <circle cx="190" cy="250" r="65" fill="url(#hat-grad)" />
+    <!-- Right Puff -->
+    <circle cx="322" cy="250" r="65" fill="url(#hat-grad)" />
+    <!-- Far Left Puff -->
+    <circle cx="150" cy="285" r="45" fill="url(#hat-grad)" />
+    <!-- Far Right Puff -->
+    <circle cx="362" cy="285" r="45" fill="url(#hat-grad)" />
+    
+    <!-- Body fill connecting puffs to base -->
+    <path d="M165 340 C145 290 180 250 210 250 C230 250 240 230 256 230 C272 230 282 250 302 250 C332 250 367 290 347 340 Z" fill="url(#hat-grad)" />
+  </g>
+
+  <!-- Timer & Flame overlay badge -->
+  <g transform="translate(320, 290)" filter="url(#shadow)">
+    <!-- Badge Background -->
+    <circle cx="60" cy="60" r="54" fill="#0f172a" stroke="#fbbf24" stroke-width="6" />
+    
+    <!-- Timer ring progress -->
+    <circle cx="60" cy="60" r="40" fill="none" stroke="#334155" stroke-width="5" />
+    <path d="M60 20 A40 40 0 1 1 28 84" fill="none" stroke="#22c55e" stroke-width="5" stroke-linecap="round" />
+
+    <!-- Timer hands -->
+    <line x1="60" y1="60" x2="60" y2="35" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+    <line x1="60" y1="60" x2="78" y2="60" stroke="#fbbf24" stroke-width="4" stroke-linecap="round" />
+    <circle cx="60" cy="60" r="5" fill="#f8fafc" />
+
+    <!-- Tiny bell clapper -->
+    <path d="M50 12 L70 12" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" />
+    <circle cx="60" cy="8" r="3" fill="#fbbf24" />
+  </g>
+</svg>

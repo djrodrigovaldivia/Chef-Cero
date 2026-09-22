@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      // Safeguard for iframe / sandboxed environments where Window.prototype.fetch has only a getter
+      (function() {
+        try {
+          var targetObj = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
+          if (!targetObj) return;
+
+          var currentFetch = targetObj.fetch;
+
+          // 1. Ensure Window.prototype has a setter if fetch descriptor exists on prototype
+          if (typeof Window !== 'undefined' && Window.prototype) {
+            try {
+              var protoDesc = Object.getOwnPropertyDescriptor(Window.prototype, 'fetch');
+              if (protoDesc && (!protoDesc.set || !protoDesc.writable)) {
+                var protoGetter = protoDesc.get;
+                var storedFetch = currentFetch;
+                Object.defineProperty(Window.prototype, 'fetch', {
+                  get: function() {
+                    return storedFetch || (protoGetter ? protoGetter.call(this) : currentFetch);
+                  },
+                  set: function(newVal) {
+                    storedFetch = newVal;
+                  },
+                  configurable: true,
+                  enumerable: true
+                });
+              }
+            } catch (eProto) {}
+          }
+
+          // 2. Ensure window instance has a writable / set-enabled fetch
+          try {
+            var winDesc = Object.getOwnPropertyDescriptor(targetObj, 'fetch');
+            if (!winDesc || !winDesc.set || !winDesc.writable) {
+              var localFetch = currentFetch;
+              Object.defineProperty(targetObj, 'fetch', {
+                get: function() {
+                  return localFetch;
+                },
+                set: function(newVal) {
+                  localFetch = newVal;
+                },
+                configurable: true,
+                enumerable: true
+              });
+            }
+          } catch (eWin) {}
+        } catch (e) {}
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chef Cero: Mi Asistente de Voz y Mentor Culinario Inteligente</title>
+    <meta name="description" content="Asistente culinario interactivo con voz en vivo, mentoría paso a paso para principiantes, recetas fáciles, económicas (BBB) y del mundo (chilena, mexicana, asiática, italiana, española, francesa)." />
+    <meta property="og:title" content="Chef Cero: Mi Asistente de Voz y Mentor Culinario Inteligente" />
+    <meta property="og:description" content="Asistente culinario interactivo con voz en vivo, mentoría paso a paso para principiantes, recetas fáciles, económicas (BBB) y del mundo (chilena, mexicana, asiática, italiana, española, francesa)." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#f59e0b" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-amber-50/30 text-stone-900 font-sans antialiased selection:bg-amber-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
