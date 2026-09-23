@@ -1,10 +1,12 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, Modality } from '@google/genai';
+import { WebSocketServer, WebSocket } from 'ws';
 import webpush from 'web-push';
 
 dotenv.config();
@@ -519,12 +521,109 @@ Instrucciones para la respuesta JSON:
     if (!parsed || !parsed.reply) {
       throw new Error('Gemini reply invalid or empty');
     }
+
+    // Generar audio nativo en español latinoamericano con Gemini TTS (evita voz robótica o acento en inglés)
+    try {
+      const audioResult = await generateSpanishSpeechAudio(ai, parsed.reply);
+      if (audioResult) {
+        parsed.audioBase64 = audioResult.audioBase64;
+        parsed.audioMimeType = audioResult.mimeType;
+      }
+    } catch (ttsErr) {
+      console.warn('Chef Cero: Aviso en generación de audio TTS:', ttsErr);
+    }
+
     return res.json(parsed);
   } catch (error: any) {
     console.warn('Gemini chat fallback engaged:', error?.message);
     const msg = req.body?.message || '';
     return res.json(generateDynamicFallback(msg));
   }
+});
+
+// Función para generar voz en español latinoamericano nativo y de alta fidelidad con Gemini TTS
+async function generateSpanishSpeechAudio(
+  ai: GoogleGenAI,
+  textToSpeak: string
+): Promise<{ audioBase64: string; mimeType: string } | null> {
+  try {
+    const cleanText = textToSpeak
+      .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
+      .replace(/[•·—–*#_`]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanText) return null;
+
+    // Usar gemini-3.8-flash-lite-tts con voz Puck (entonación cálida, cercana y empática en español)
+    const ttsResponse = await ai.models.generateContent({
+      model: 'gemini-3.8-flash-lite-tts',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: cleanText,
+              speechMetadata: {
+                style: 'Calm, warm, empathetic Latin American Spanish native speaker mentor chef.',
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Puck' },
+          },
+        },
+      },
+    });
+
+    const part = ttsResponse.candidates?.[0]?.content?.parts?.[0];
+    if (part?.inlineData?.data) {
+      return {
+        audioBase64: part.inlineData.data,
+        mimeType: part.inlineData.mimeType || 'audio/wav',
+      };
+    }
+    return null;
+  } catch (err: any) {
+    console.warn('Chef Cero: Error generando voz TTS de Gemini:', err?.message || err);
+    return null;
+  }
+}
+
+// Endpoint dedicado para sintetizar audio nativo en español bajo demanda (ej: botón escuchar audio o pasos)
+app.post('/api/tts', async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Texto requerido' });
+    }
+    const ai = getAi();
+    const audioResult = await generateSpanishSpeechAudio(ai, text);
+    if (!audioResult) {
+      return res.status(500).json({ error: 'No se pudo generar el audio nativo' });
+    }
+    return res.json(audioResult);
+  } catch (err: any) {
+    console.warn('Chef Cero: Error en endpoint /api/tts:', err?.message);
+    return res.status(500).json({ error: 'Error interno en TTS' });
+  }
+});
+
+// Endpoint para verificar si Gemini Live API está disponible en este entorno
+app.get('/api/live/status', (req, res) => {
+  const hasGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+  return res.json({
+    available: hasGemini,
+    model: 'gemini-3.8-live',
+    voice: 'Puck',
+    language: 'es-419 (Latinoamérica)',
+    features: ['bidirectional_audio', 'realtime_transcription', 'live_interruptions'],
+  });
 });
 
 // 2. Recipe Planner & "Tengo 3 ingredientes" Generator
@@ -1204,6 +1303,146 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con este formato:
 // Vite middleware in development vs static files in production
 
 async function startServer() {
+  const server = http.createServer(app);
+
+  // Servidor WebSocket dedicado para Gemini 3.8 Live API en tiempo real
+  const wss = new WebSocketServer({ server, path: '/api/live' });
+
+  wss.on('connection', async (clientWs: WebSocket) => {
+    console.log('Chef Cero: Cliente conectado al WebSocket de Live API (/api/live)');
+    let session: any = null;
+    let isClosed = false;
+
+    try {
+      const ai = getAi();
+      session = await ai.live.connect({
+        model: 'gemini-3.8-live',
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
+          },
+          systemInstruction:
+            'Eres Chef Cero, un mentor de cocina cálido, empático, paciente y experto para principiantes en español latinoamericano nativo. Habla SIEMPRE en español nativo con acento hispano natural y acogedor. Respuestas breves, directas y tranquilizadoras de 1 o 2 oraciones, ideales para alguien que está cocinando activamente con las manos ocupadas frente a la sartén. Si el usuario te habla asustado (humo, fuego, quemado), indícale con calma que retire la sartén del fuego y respire.',
+          outputAudioTranscription: {},
+          inputAudioTranscription: {},
+        },
+        callbacks: {
+          onmessage: (msg: any) => {
+            if (isClosed || clientWs.readyState !== WebSocket.OPEN) return;
+
+            // Enviar audio PCM a 24kHz del Chef Cero
+            const audioPart = msg.serverContent?.modelTurn?.parts?.find((p: any) => p.inlineData?.data);
+            if (audioPart?.inlineData?.data) {
+              clientWs.send(
+                JSON.stringify({
+                  type: 'audio',
+                  data: audioPart.inlineData.data,
+                  mimeType: audioPart.inlineData.mimeType || 'audio/pcm;rate=24000',
+                })
+              );
+            }
+
+            // Transcripción en vivo del Chef (se va añadiendo al chat)
+            if (msg.serverContent?.outputTranscription?.text) {
+              clientWs.send(
+                JSON.stringify({
+                  type: 'outputTranscription',
+                  text: msg.serverContent.outputTranscription.text,
+                })
+              );
+            }
+
+            // Transcripción en vivo de lo que dice el usuario
+            if (msg.serverContent?.inputTranscription?.text) {
+              clientWs.send(
+                JSON.stringify({
+                  type: 'inputTranscription',
+                  text: msg.serverContent.inputTranscription.text,
+                })
+              );
+            }
+
+            // Si el usuario interrumpe al chef hablando
+            if (msg.serverContent?.interrupted) {
+              clientWs.send(JSON.stringify({ type: 'interrupted' }));
+            }
+
+            // Si la respuesta ha terminado
+            if (msg.serverContent?.turnComplete || msg.serverContent?.generationComplete) {
+              clientWs.send(JSON.stringify({ type: 'turnComplete' }));
+            }
+          },
+          onclose: () => {
+            if (!isClosed && clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify({ type: 'sessionClosed' }));
+            }
+          },
+          onerror: (err: any) => {
+            console.warn('Chef Cero: Error en Live API session:', err?.message || err);
+            if (!isClosed && clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify({ type: 'error', message: 'Error en conexión con Live API' }));
+            }
+          },
+        },
+      });
+
+      clientWs.send(JSON.stringify({ type: 'ready', model: 'gemini-3.8-live' }));
+    } catch (err: any) {
+      console.error('Chef Cero: No se pudo conectar a Gemini Live:', err?.message || err);
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'No se pudo iniciar Gemini 3.8 Live API, recurriendo a modo chat estándar.',
+          })
+        );
+        clientWs.close();
+      }
+      return;
+    }
+
+    clientWs.on('message', async (data: any) => {
+      if (!session || isClosed) return;
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'audio' && msg.data) {
+          // Enviar audio PCM de 16kHz al modelo Live
+          session.sendRealtimeInput({
+            audio: { data: msg.data, mimeType: 'audio/pcm;rate=16000' },
+          });
+        } else if (msg.type === 'text' && msg.text) {
+          session.sendRealtimeInput({
+            text: msg.text,
+          });
+        }
+      } catch (e: any) {
+        console.warn('Chef Cero: Error procesando mensaje de cliente en Live WebSocket:', e?.message);
+      }
+    });
+
+    clientWs.on('close', async () => {
+      isClosed = true;
+      if (session) {
+        try {
+          await session.close();
+        } catch (_) {}
+        session = null;
+      }
+    });
+
+    clientWs.on('error', async (err) => {
+      console.warn('Chef Cero: WebSocket error:', err);
+      isClosed = true;
+      if (session) {
+        try {
+          await session.close();
+        } catch (_) {}
+        session = null;
+      }
+    });
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1218,8 +1457,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Chef Cero server running on http://0.0.0.0:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Chef Cero server running on http://0.0.0.0:${PORT} (HTTP + WebSockets Live API en /api/live)`);
   });
 }
 

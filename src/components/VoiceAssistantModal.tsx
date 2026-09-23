@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, Send, X, Clock, Flame, ShieldAlert, Sparkles, ChefHat, MessageSquare, HelpCircle, Brain, Trash2, Plus, Check } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, Send, X, Clock, Flame, ShieldAlert, Sparkles, ChefHat, MessageSquare, HelpCircle, Brain, Trash2, Plus, Check, Radio, Zap } from 'lucide-react';
 import { UserProfile, ChatMessage, ChefMemoryFact } from '../types';
 import { speakSpanishText, stopSpeaking, playEmergencyAlertSound } from '../utils/audioAlert';
 import { requestNotificationPermission as requestBrowserNotificationPermission } from '../utils/notifications';
 import { useSilentMode } from '../utils/useSilentMode';
+import { GeminiLiveClient, LiveClientState } from '../utils/geminiLiveClient';
 
 interface VoiceAssistantModalProps {
   isOpen: boolean;
@@ -50,9 +51,127 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const [emergencyAlert, setEmergencyAlert] = useState<string | null>(null);
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
 
+  // Estados para Gemini 3.8 Live API en tiempo real
+  const [isLiveAvailable, setIsLiveAvailable] = useState<boolean | null>(null);
+  const [isLiveActive, setIsLiveActive] = useState<boolean>(false);
+  const [liveState, setLiveState] = useState<LiveClientState>('idle');
+  const [liveAudioLevel, setLiveAudioLevel] = useState<number>(0);
+  const liveClientRef = useRef<GeminiLiveClient | null>(null);
+  const currentLiveUserMsgId = useRef<string | null>(null);
+  const currentLiveChefMsgId = useRef<string | null>(null);
+
   const recognitionRef = useRef<any>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const autoListenTimeoutRef = useRef<any>(null);
+
+  // Verificar disponibilidad de Gemini Live API en el backend
+  useEffect(() => {
+    fetch('/api/live/status')
+      .then((r) => r.json())
+      .then((data) => {
+        setIsLiveAvailable(data?.available ?? false);
+      })
+      .catch(() => setIsLiveAvailable(false));
+  }, []);
+
+  const stopLiveSession = () => {
+    if (liveClientRef.current) {
+      liveClientRef.current.disconnect();
+      liveClientRef.current = null;
+    }
+    setIsLiveActive(false);
+    setLiveState('idle');
+    currentLiveUserMsgId.current = null;
+    currentLiveChefMsgId.current = null;
+  };
+
+  const startLiveSession = async () => {
+    if (isSpeaking) {
+      stopSpeaking();
+      setIsSpeaking(false);
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (_) {}
+    }
+    setIsListening(false);
+
+    const client = new GeminiLiveClient({
+      onStateChange: (st) => {
+        setLiveState(st);
+        if (st === 'speaking') {
+          setIsSpeaking(true);
+        } else if (st === 'listening') {
+          setIsSpeaking(false);
+        }
+      },
+      onAudioLevel: (lvl) => {
+        setLiveAudioLevel(lvl);
+      },
+      onUserTranscript: (transcript) => {
+        if (!transcript.trim()) return;
+        // Se añade automáticamente al chat en vivo
+        setMessages((prev) => {
+          const id = currentLiveUserMsgId.current || `live-user-${Date.now()}`;
+          currentLiveUserMsgId.current = id;
+          const exists = prev.some((m) => m.id === id);
+          if (exists) {
+            return prev.map((m) => (m.id === id ? { ...m, text: transcript } : m));
+          }
+          return [
+            ...prev,
+            {
+              id,
+              sender: 'user',
+              text: transcript,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ];
+        });
+      },
+      onChefTranscript: (chunk) => {
+        if (!chunk) return;
+        // Transcripción en vivo del Chef añadida directamente al chat
+        setMessages((prev) => {
+          const id = currentLiveChefMsgId.current || `live-chef-${Date.now()}`;
+          currentLiveChefMsgId.current = id;
+          const exists = prev.some((m) => m.id === id);
+          if (exists) {
+            return prev.map((m) => (m.id === id ? { ...m, text: m.text + chunk } : m));
+          }
+          return [
+            ...prev,
+            {
+              id,
+              sender: 'chef',
+              text: chunk,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ];
+        });
+      },
+      onTurnComplete: () => {
+        currentLiveUserMsgId.current = null;
+        currentLiveChefMsgId.current = null;
+      },
+      onError: (errMsg) => {
+        console.warn('Chef Cero: Error en Live API:', errMsg);
+        setSpeechNotice(`Aviso Live: ${errMsg}. Continuando en modo estándar.`);
+        stopLiveSession();
+      },
+    });
+
+    liveClientRef.current = client;
+    const ok = await client.connect();
+    if (ok) {
+      setIsLiveActive(true);
+      setSpeechNotice(null);
+    } else {
+      setIsLiveActive(false);
+      setSpeechNotice('No se pudo activar Live API. Usando modo estándar de chat.');
+    }
+  };
 
   // Cerrar con tecla Escape para máxima accesibilidad
   useEffect(() => {
@@ -144,6 +263,11 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   }, [messages, isLoading]);
 
   const toggleListening = () => {
+    if (isLiveActive) {
+      stopLiveSession();
+      return;
+    }
+
     if (!recognitionRef.current) {
       setSpeechNotice('Tu navegador no tiene activado el reconocimiento por voz directo. Puedes escribir tu duda abajo o tocar las consultas rápidas.');
       return;
@@ -161,12 +285,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
   };
 
-  const handleReplayAudio = (text: string) => {
+  const handleReplayAudio = (text: string, audioBase64?: string, audioMimeType?: string) => {
     stopSpeaking();
     setIsSpeaking(true);
     speakSpanishText(text, {
       speaker: 'Chef Cero',
-      badge: isSilent ? 'Modo Silencioso' : 'Voz Latinoamericana',
+      badge: isSilent ? 'Modo Silencioso' : 'Voz Nativa en Vivo',
+      audioBase64,
+      audioMimeType,
       onEnd: () => {
         setIsSpeaking(false);
         if (isContinuousMode && !isSilent) {
@@ -181,6 +307,20 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const handleSendQuery = async (queryToSend?: string) => {
     const text = (queryToSend || inputQuery).trim();
     if (!text) return;
+
+    // Si el modo Live está activo, enviar directo a través del canal en tiempo real
+    if (isLiveActive && liveClientRef.current) {
+      setInputQuery('');
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        sender: 'user',
+        text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      liveClientRef.current.sendText(text);
+      return;
+    }
 
     // Si el usuario dijo palabras de despedida o pausa, pausar con cariño
     const lower = text.toLowerCase();
@@ -266,15 +406,19 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         text: chefReplyText,
         safetyAlert: data.safetyAlert || undefined,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        audioBase64: data.audioBase64,
+        audioMimeType: data.audioMimeType,
       };
 
       setMessages((prev) => [...prev, chefMsg]);
 
-      // Reproducir voz en español latinoamericano y reactivar conversación continua al terminar
+      // Reproducir voz nativa con Gemini TTS y reactivar conversación continua al terminar
       setIsSpeaking(true);
       speakSpanishText(chefReplyText, {
         speaker: 'Chef Cero',
-        badge: isSilent ? 'Modo Silencioso' : 'Voz Latinoamericana',
+        badge: isSilent ? 'Modo Silencioso' : 'Voz Nativa en Vivo',
+        audioBase64: data.audioBase64,
+        audioMimeType: data.audioMimeType,
         onEnd: () => {
           setIsSpeaking(false);
           // Si el modo conversación continua está activo y no es silencioso, abrir micrófono automáticamente
@@ -342,6 +486,35 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Toggle Gemini 3.8 Live API en tiempo real */}
+            <button
+              onClick={() => {
+                if (isLiveActive) {
+                  stopLiveSession();
+                } else {
+                  startLiveSession();
+                }
+              }}
+              title={
+                isLiveActive
+                  ? 'Desactivar Gemini 3.8 Live y volver a chat estándar'
+                  : 'Activar Gemini 3.8 Live API (conversación de audio en tiempo real continua manos libres)'
+              }
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                isLiveActive
+                  ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-300 animate-pulse'
+                  : 'bg-rose-700/80 hover:bg-rose-600 text-white shadow-sm'
+              }`}
+            >
+              <Radio className={`w-3.5 h-3.5 ${isLiveActive ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">
+                {isLiveActive ? 'Live 3.8: ON' : 'Live 3.8'}
+              </span>
+              <span className="sm:hidden">
+                {isLiveActive ? 'Live ON' : 'Live'}
+              </span>
+            </button>
+
             {/* Toggle Conversación Continua Manos Libres */}
             <button
               onClick={() => setIsContinuousMode((prev) => !prev)}
@@ -415,6 +588,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
             <button
               onClick={() => {
+                stopLiveSession();
                 stopSpeaking();
                 onClose();
               }}
@@ -424,6 +598,38 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Barra de estado en vivo para Gemini 3.8 Live API */}
+        {isLiveActive && (
+          <div className="bg-rose-950 text-rose-100 px-4 py-2.5 flex items-center justify-between text-xs border-b border-rose-800 shadow-inner">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+              </span>
+              <span>
+                <strong>🔴 Gemini 3.8 Live Conectado:</strong>{' '}
+                {liveState === 'speaking'
+                  ? 'El Chef te responde en vivo (puedes interrumpir con tu voz)'
+                  : liveState === 'connecting'
+                  ? 'Conectando canal de audio...'
+                  : 'Manos libres activas: habla con total naturalidad.'}
+              </span>
+            </div>
+            {/* Visualizador dinámico de ondas sonoras */}
+            <div className="flex items-center gap-1 h-3.5">
+              {[0.4, 0.8, 1, 0.6, 0.9, 0.5, 0.7].map((h, i) => (
+                <span
+                  key={i}
+                  className="w-1 bg-rose-400 rounded-full transition-all duration-75"
+                  style={{
+                    height: `${Math.max(3, (liveState === 'speaking' ? 14 : liveAudioLevel * 22) * h)}px`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Notificación flotante de nuevo dato aprendido en tiempo real */}
         {lastLearnedNotification && (
@@ -578,6 +784,28 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
         {/* Chat History */}
         <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-amber-50/20">
+          {/* Banner invitando a usar Live si está disponible y aún no está activo */}
+          {!isLiveActive && isLiveAvailable && (
+            <div className="p-3 bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200/90 rounded-2xl flex items-center justify-between gap-3 text-xs text-rose-950 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-600 text-white rounded-xl shrink-0 shadow-xs">
+                  <Radio className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="font-bold text-rose-950">Conversación en Tiempo Real con Gemini 3.8 Live</p>
+                  <p className="text-[11px] text-stone-600">Habla con las manos libres de corrido sin tocar botones.</p>
+                </div>
+              </div>
+              <button
+                onClick={startLiveSession}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition shrink-0 flex items-center gap-1.5 text-xs"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Activar Live</span>
+              </button>
+            </div>
+          )}
+
           {messages.map((msg) => (
             <div
               key={msg.id}
@@ -600,9 +828,9 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 {msg.sender === 'chef' && (
                   <div className="mt-2 pt-2 border-t border-stone-100 flex items-center justify-between gap-2">
                     <button
-                      onClick={() => handleReplayAudio(msg.text)}
+                      onClick={() => handleReplayAudio(msg.text, msg.audioBase64, msg.audioMimeType)}
                       className="inline-flex items-center gap-1 text-[11px] text-amber-700 hover:text-amber-900 font-semibold transition py-0.5 px-2 rounded-lg hover:bg-amber-50"
-                      title="Escuchar respuesta en audio en español latinoamericano"
+                      title="Escuchar respuesta en voz nativa en español latinoamericano"
                     >
                       <Volume2 className="w-3.5 h-3.5 text-amber-600" />
                       <span>Escuchar en audio</span>
@@ -695,13 +923,27 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           <button
             onClick={toggleListening}
             className={`p-3.5 rounded-full flex items-center justify-center transition-all shadow-md ${
-              isListening
+              isLiveActive
+                ? 'bg-rose-600 text-white animate-pulse ring-4 ring-rose-300'
+                : isListening
                 ? 'bg-red-600 text-white animate-pulse ring-4 ring-red-200'
                 : 'bg-amber-500 hover:bg-amber-600 text-white'
             }`}
-            title={isListening ? 'Detener micrófono' : 'Hablar con el Chef (Manos Libres)'}
+            title={
+              isLiveActive
+                ? 'Gemini 3.8 Live activo (haz clic para pausar o detener Live)'
+                : isListening
+                ? 'Detener micrófono'
+                : 'Hablar con el Chef (Manos Libres)'
+            }
           >
-            {isListening ? <Mic className="w-6 h-6 animate-spin" /> : <Mic className="w-6 h-6" />}
+            {isLiveActive ? (
+              <Radio className="w-6 h-6 animate-pulse" />
+            ) : isListening ? (
+              <Mic className="w-6 h-6 animate-spin" />
+            ) : (
+              <Mic className="w-6 h-6" />
+            )}
           </button>
 
           <div className="flex-1 relative">
@@ -711,16 +953,18 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               onChange={(e) => setInputQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendQuery()}
               placeholder={
-                isListening
+                isLiveActive
+                  ? '🔴 Gemini 3.8 Live activo: habla de corrido o escribe aquí...'
+                  : isListening
                   ? 'Escuchando tu voz en vivo...'
                   : 'Pregunta lo que sea o toca el micrófono...'
               }
               className="w-full bg-stone-100 border border-stone-300 rounded-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition-all text-stone-800"
             />
-            {isListening && (
+            {(isListening || isLiveActive) && (
               <span className="absolute right-3 top-3 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isLiveActive ? 'bg-rose-400' : 'bg-red-400'} opacity-75`}></span>
+                <span className={`relative inline-flex rounded-full h-3 w-3 ${isLiveActive ? 'bg-rose-500' : 'bg-red-500'}`}></span>
               </span>
             )}
           </div>

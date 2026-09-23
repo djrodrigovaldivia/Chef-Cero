@@ -288,6 +288,8 @@ export interface ChatMessage {
   text: string;
   safetyAlert?: string;
   timestamp: string;
+  audioBase64?: string;
+  audioMimeType?: string;
 }
 
 export interface LeftoverIngredientRescue {

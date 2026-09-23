@@ -339,6 +339,139 @@ export interface SpeakOptions {
   badge?: string;
   isEmergency?: boolean;
   onEnd?: () => void;
+  audioBase64?: string;
+  audioMimeType?: string;
+}
+
+let currentAudioElement: HTMLAudioElement | null = null;
+
+// Helper para reproducir audio nativo en base64 (generado por Gemini TTS de alta fidelidad)
+function playBase64Audio(
+  base64Data: string,
+  mimeType: string,
+  onEndCallback?: () => void
+): boolean {
+  try {
+    const audioSrc = `data:${mimeType || 'audio/wav'};base64,${base64Data}`;
+    const audio = new Audio(audioSrc);
+    currentAudioElement = audio;
+
+    audio.onended = () => {
+      if (currentAudioElement === audio) {
+        currentAudioElement = null;
+      }
+      onEndCallback?.();
+    };
+
+    audio.onerror = (e) => {
+      console.warn('Chef Cero: Error reproduciendo audio nativo:', e);
+      if (currentAudioElement === audio) {
+        currentAudioElement = null;
+      }
+      onEndCallback?.();
+    };
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((playErr) => {
+        console.warn('Chef Cero: Autoplay bloqueado o aviso de audio:', playErr);
+        if (currentAudioElement === audio) {
+          currentAudioElement = null;
+        }
+        onEndCallback?.();
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('Chef Cero: Excepción en reproducción de audio base64:', err);
+    return false;
+  }
+}
+
+// Fallback seguro a SpeechSynthesis del navegador, pero BLOQUEANDO voces en inglés
+function speakWithBrowserFallback(
+  cleanText: string,
+  onEndCallback?: () => void
+) {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    onEndCallback?.();
+    return;
+  }
+
+  const voices = window.speechSynthesis.getVoices();
+  const latinVoice = getBestLatinAmericanVoice();
+
+  // REGLA CRÍTICA ANTI-ACENTO: Si el navegador no tiene ninguna voz en español,
+  // NO permitir que una voz en inglés intente pronunciar español ("inglés hablando mal español").
+  const hasSpanishVoice = voices.some(
+    (v) => (v.lang && v.lang.toLowerCase().startsWith('es')) || v.name.toLowerCase().includes('spanish')
+  );
+
+  if (!hasSpanishVoice && !latinVoice) {
+    console.info('Chef Cero: No hay voz nativa en español en el sistema operativo; subtítulos visibles activados.');
+    // Concluir amablemente sin emitir audio deformado
+    setTimeout(() => {
+      onEndCallback?.();
+    }, 1500);
+    return;
+  }
+
+  let speechWatchdog: any = null;
+
+  try {
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = latinVoice?.lang || 'es-419';
+    utterance.rate = 0.94; // Cadencia óptima para máxima inteligibilidad
+    utterance.pitch = 1.02; // Tono cálido y empático
+
+    if (latinVoice) {
+      utterance.voice = latinVoice;
+    }
+
+    const cleanupAndFinish = () => {
+      if (speechWatchdog) {
+        clearTimeout(speechWatchdog);
+        speechWatchdog = null;
+      }
+      currentUtterance = null;
+      (window as any).__chefCeroUtterance = null;
+      onEndCallback?.();
+    };
+
+    utterance.onend = () => {
+      cleanupAndFinish();
+    };
+
+    utterance.onerror = (e) => {
+      if (e.error !== 'canceled' && e.error !== 'interrupted') {
+        console.warn('SpeechSynthesis notice:', e.error);
+      }
+      cleanupAndFinish();
+    };
+
+    const maxSpeechDuration = Math.max(8000, cleanText.length * 90);
+    speechWatchdog = setTimeout(() => {
+      if (currentUtterance === utterance && window.speechSynthesis.speaking) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (_) {}
+        cleanupAndFinish();
+      }
+    }, maxSpeechDuration);
+
+    currentUtterance = utterance;
+    (window as any).__chefCeroUtterance = utterance;
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.warn('Browser speech error:', err);
+    if (speechWatchdog) clearTimeout(speechWatchdog);
+    onEndCallback?.();
+  }
 }
 
 export function speakSpanishText(
@@ -347,8 +480,10 @@ export function speakSpanishText(
 ) {
   let onEndCallback: (() => void) | undefined;
   let speakerName = 'Chef Cero';
-  let badgeName = isSilentModeActive ? 'Modo Silencioso' : 'Subtítulo en Vivo';
+  let badgeName = isSilentModeActive ? 'Modo Silencioso' : 'Voz Nativa en Vivo';
   let isEmergency = false;
+  let providedAudioBase64: string | undefined;
+  let providedAudioMimeType: string | undefined;
 
   if (typeof onEndOrOptions === 'function') {
     onEndCallback = onEndOrOptions;
@@ -357,7 +492,12 @@ export function speakSpanishText(
     if (onEndOrOptions.speaker) speakerName = onEndOrOptions.speaker;
     if (onEndOrOptions.badge) badgeName = onEndOrOptions.badge;
     if (onEndOrOptions.isEmergency) isEmergency = onEndOrOptions.isEmergency;
+    providedAudioBase64 = onEndOrOptions.audioBase64;
+    providedAudioMimeType = onEndOrOptions.audioMimeType;
   }
+
+  // Detener cualquier audio o habla previa
+  stopSpeaking();
 
   // Limpiar y normalizar fonéticamente el texto para dicción perfecta
   const cleanText = normalizeTextForSpeech(text);
@@ -378,8 +518,6 @@ export function speakSpanishText(
 
   // Si está en MODO SILENCIOSO: NO REPRODUCIR VOZ NI AUDIO
   if (isSilentModeActive) {
-    stopSpeaking();
-    // Simular el término tras un lapso de lectura adecuado
     if (onEndCallback) {
       setTimeout(() => {
         onEndCallback?.();
@@ -388,83 +526,45 @@ export function speakSpanishText(
     return;
   }
 
-  // Si el audio está activado, sintetizar la voz normalmente
-  if (!('speechSynthesis' in window)) {
-    console.warn('Speech synthesis not supported on this browser.');
-    if (onEndCallback) onEndCallback();
-    return;
+  // 1. Si ya viene el audio nativo generado por Gemini TTS (cero acento extranjero, 100% natural)
+  if (providedAudioBase64) {
+    const ok = playBase64Audio(providedAudioBase64, providedAudioMimeType || 'audio/wav', onEndCallback);
+    if (ok) return;
   }
 
-  let speechWatchdog: any = null;
-
-  try {
-    // Reanudar la síntesis si estaba pausada y limpiar colas
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-    }
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    const latinVoice = getBestLatinAmericanVoice();
-
-    // Configuración optimizada para español latinoamericano: cadencia calmada, dicción nítida
-    utterance.lang = latinVoice?.lang || 'es-419';
-    utterance.rate = 0.94; // Cadencia óptima para máxima inteligibilidad en cocina
-    utterance.pitch = 1.02; // Tono cálido, empático y natural
-
-    if (latinVoice) {
-      utterance.voice = latinVoice;
-    }
-
-    const cleanupAndFinish = () => {
-      if (speechWatchdog) {
-        clearTimeout(speechWatchdog);
-        speechWatchdog = null;
+  // 2. Si no viene pregenerado, solicitar audio nativo a /api/tts
+  fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: cleanText }),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error('TTS server response not ok');
+      return res.json();
+    })
+    .then((data) => {
+      if (data?.audioBase64) {
+        playBase64Audio(data.audioBase64, data.mimeType || 'audio/wav', onEndCallback);
+      } else {
+        speakWithBrowserFallback(cleanText, onEndCallback);
       }
-      currentUtterance = null;
-      (window as any).__chefCeroUtterance = null;
-      if (onEndCallback) {
-        const cb = onEndCallback;
-        onEndCallback = undefined;
-        cb();
-      }
-    };
-
-    utterance.onend = () => {
-      cleanupAndFinish();
-    };
-
-    utterance.onerror = (e) => {
-      // Si el error fue por cancelación intencional ('canceled' o 'interrupted'), no es un fallo
-      if (e.error !== 'canceled' && e.error !== 'interrupted') {
-        console.warn('SpeechSynthesis notice:', e.error);
-      }
-      cleanupAndFinish();
-    };
-
-    // Watchdog de seguridad: evita que Chromium congele el estado `speaking` indefinidamente en textos largos
-    const maxSpeechDuration = Math.max(8000, cleanText.length * 90);
-    speechWatchdog = setTimeout(() => {
-      if (currentUtterance === utterance && window.speechSynthesis.speaking) {
-        try {
-          window.speechSynthesis.cancel();
-        } catch (_) {}
-        cleanupAndFinish();
-      }
-    }, maxSpeechDuration);
-
-    currentUtterance = utterance;
-    // Referencia global para evitar recolección de basura prematura en Chrome/Safari
-    (window as any).__chefCeroUtterance = utterance;
-    window.speechSynthesis.speak(utterance);
-  } catch (err) {
-    console.warn('Speak error:', err);
-    if (speechWatchdog) clearTimeout(speechWatchdog);
-    if (onEndCallback) onEndCallback();
-  }
+    })
+    .catch((fetchErr) => {
+      console.warn('Chef Cero: /api/tts no disponible, usando fallback local seguro:', fetchErr?.message);
+      speakWithBrowserFallback(cleanText, onEndCallback);
+    });
 }
 
 export function stopSpeaking() {
+  if (currentAudioElement) {
+    try {
+      currentAudioElement.pause();
+      currentAudioElement.currentTime = 0;
+      currentAudioElement.src = '';
+    } catch (_) {}
+    currentAudioElement = null;
+  }
+
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
