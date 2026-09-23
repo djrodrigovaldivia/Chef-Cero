@@ -4,13 +4,18 @@ import {
   AlertTriangle, ShieldCheck, ChevronRight, ChevronLeft, Sparkles, 
   HelpCircle, ChefHat, Award, PlusCircle, CheckCircle2,
   Bell, BellRing, BellOff, Volume2, VolumeX, MessageSquare, Trash2, Smartphone, Check, AlertCircle,
-  Sun, ShieldAlert, Ear, Eye, Wind, ChevronDown, ChevronUp, WifiOff
+  Sun, ShieldAlert, Ear, Eye, Wind, ChevronDown, ChevronUp, WifiOff,
+  ShoppingCart, Users, Mic, MicOff, Maximize2, Minimize2, HelpCircle as FaqIcon
 } from 'lucide-react';
-import { Recipe, RecipeStep, UserProfile, ActiveTimer, WorldCuisineId } from '../types';
+import { Recipe, RecipeStep, UserProfile, ActiveTimer, WorldCuisineId, CULINARY_LEVELS, CulinaryLevel, CulinaryLevelMeta } from '../types';
 import { STARTER_RECIPES, WORLD_CUISINES } from '../data/recipeData';
+import { NOVICE_FAQS } from '../data/leftoversAndFaqData';
 import { playTimerCompletionChime, speakSpanishText } from '../utils/audioAlert';
 import { useOnlineStatus } from '../utils/useOnlineStatus';
 import { useSilentMode } from '../utils/useSilentMode';
+import { scaleIngredientText } from '../utils/servingsScaler';
+import { HandsFreeCookingListener } from '../utils/handsFreeListener';
+import { ShoppingListModal } from './ShoppingListModal';
 import {
   isPushSupported,
   getNotificationPermission,
@@ -43,6 +48,7 @@ interface CookingModeProps {
   }) => void;
   incomingTimer?: { seconds: number; label: string } | null;
   onClearIncomingTimer?: () => void;
+  onLearnFact?: (category: 'fuego' | 'gustos' | 'equipamiento' | 'habito' | 'fortaleza', fact: string) => void;
 }
 
 export const CookingMode: React.FC<CookingModeProps> = ({
@@ -51,6 +57,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   onOpenVoiceAssistantWithContext,
   incomingTimer,
   onClearIncomingTimer,
+  onLearnFact,
 }) => {
   const [recipesList, setRecipesList] = useState<Recipe[]>(STARTER_RECIPES);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe>(STARTER_RECIPES[0]);
@@ -100,6 +107,84 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   // Desplegable de ciencia culinaria por paso
   const [isScienceExpanded, setIsScienceExpanded] = useState(false);
 
+  // Flujo ordenado por etapas para eliminar el caos visual y la sobrecarga de información
+  const [cookingStage, setCookingStage] = useState<'receta' | 'mise' | 'fuegos'>('receta');
+  // Referencias secundarias desplegables durante la cocción activa
+  const [showHeatGuideInCooking, setShowHeatGuideInCooking] = useState(false);
+  const [showIngredientsInCooking, setShowIngredientsInCooking] = useState(false);
+
+  // Escalador de porciones inteligente (1, 2, 4 porciones)
+  const [targetServings, setTargetServings] = useState<number>(selectedRecipe.servings || 2);
+  // Modal de Lista de Compras Compartible
+  const [isShoppingModalOpen, setIsShoppingModalOpen] = useState(false);
+  const [addedToShoppingNotice, setAddedToShoppingNotice] = useState<string | null>(null);
+
+  // Modo Manos Libres con Escucha Continua (Estilo SideChef)
+  const [isHandsFreeActive, setIsHandsFreeActive] = useState<boolean>(false);
+  const [handsFreeLastHeard, setHandsFreeLastHeard] = useState<string | null>(null);
+  const [handsFreeListener, setHandsFreeListener] = useState<HandsFreeCookingListener | null>(null);
+
+  // Modo Inmersivo Pantalla Completa
+  const [isFullScreenCooking, setIsFullScreenCooking] = useState<boolean>(false);
+
+  // Acordeón FAQ de Miedos y Mitos del Novato
+  const [showFaqSection, setShowFaqSection] = useState<boolean>(false);
+  const [expandedFaqId, setExpandedFaqId] = useState<string | null>(null);
+
+  // Sincronizar porciones objetivo cuando cambia la receta
+  useEffect(() => {
+    setTargetServings(selectedRecipe.servings || 2);
+  }, [selectedRecipe.id]);
+
+  // Evolución y Progresión Culinaria (Desde no saber nada hasta dominar la cocina)
+  const [levelFilter, setLevelFilter] = useState<'all' | 'my_level' | number>('all');
+  const [showRoadmapModal, setShowRoadmapModal] = useState(false);
+  const [levelUpCelebration, setLevelUpCelebration] = useState<{
+    oldLevel: number;
+    newLevel: number;
+    newTitle: string;
+    newBadge: string;
+    unlockedTechniques: string[];
+  } | null>(null);
+  const [mentorRecommendation, setMentorRecommendation] = useState<{
+    recommendedRecipeId: string;
+    headline: string;
+    mentorReasoning: string;
+    learningFocus: string;
+    encouragement: string;
+  } | null>(null);
+  const [isLoadingRecommendation, setIsLoadingRecommendation] = useState(false);
+
+  // Cargar recomendación pedagógica adaptativa para el nivel actual
+  useEffect(() => {
+    let isMounted = true;
+    const fetchMentorRecommendation = async () => {
+      try {
+        setIsLoadingRecommendation(true);
+        const res = await fetch('/api/mentor/recommend-next', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userProfile,
+            recipesCatalog: recipesList,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) setMentorRecommendation(data);
+        }
+      } catch (err) {
+        console.warn('Recommendation fetch failed:', err);
+      } finally {
+        if (isMounted) setIsLoadingRecommendation(false);
+      }
+    };
+    fetchMentorRecommendation();
+    return () => {
+      isMounted = false;
+    };
+  }, [userProfile.level, userProfile.cookedHistory?.length]);
+
   // Estado de conexión a internet para asegurar la experiencia offline
   const isOnline = useOnlineStatus();
 
@@ -111,6 +196,70 @@ export const CookingMode: React.FC<CookingModeProps> = ({
     const cleanup = setupWakeLockAutoRefresh(wakeLockPreferred, setWakeLockActive);
     return cleanup;
   }, [wakeLockPreferred]);
+
+  // Manejo de manos libres por voz continuo (Estilo SideChef)
+  useEffect(() => {
+    if (!isHandsFreeActive) {
+      if (handsFreeListener) {
+        handsFreeListener.stop();
+        setHandsFreeListener(null);
+      }
+      return;
+    }
+
+    const listener = new HandsFreeCookingListener({
+      onNextStep: () => {
+        if (currentStepIndex < selectedRecipe.steps.length - 1) {
+          setCurrentStepIndex((prev) => prev + 1);
+          speakSpanishText(`Paso ${currentStepIndex + 2}: ${selectedRecipe.steps[currentStepIndex + 1]?.title}`);
+        } else {
+          speakSpanishText('¡Has completado el último paso de la receta!');
+        }
+      },
+      onPrevStep: () => {
+        if (currentStepIndex > 0) {
+          setCurrentStepIndex((prev) => prev - 1);
+          speakSpanishText(`Paso ${currentStepIndex}: ${selectedRecipe.steps[currentStepIndex - 1]?.title}`);
+        }
+      },
+      onRepeatStep: () => {
+        const step = selectedRecipe.steps[currentStepIndex];
+        if (step) {
+          speakSpanishText(`Paso ${step.stepNumber}: ${step.title}. ${step.instruction}`);
+        }
+      },
+      onStartTimer: () => {
+        const step = selectedRecipe.steps[currentStepIndex];
+        if (step?.timerSeconds) {
+          handleStartTimer(step.timerSeconds, step.timerLabel || `Paso ${step.stepNumber}`, currentStepIndex);
+          speakSpanishText(`Temporizador de ${Math.round(step.timerSeconds / 60)} minutos iniciado.`);
+        } else {
+          speakSpanishText('Este paso no requiere temporizador fijo.');
+        }
+      },
+      onPauseTimer: () => {
+        setActiveTimers((prev) => prev.map((t) => ({ ...t, isRunning: false })));
+        speakSpanishText('Temporizadores pausados.');
+      },
+      onEmergency: () => {
+        setIsEmergencyModalOpen(true);
+        speakSpanishText('Abriendo menú de emergencias culinarias de inmediato.');
+      },
+      onStatusChange: (_listening, lastWord) => {
+        if (lastWord) {
+          setHandsFreeLastHeard(lastWord);
+          setTimeout(() => setHandsFreeLastHeard(null), 3000);
+        }
+      },
+    });
+
+    listener.start();
+    setHandsFreeListener(listener);
+
+    return () => {
+      listener.stop();
+    };
+  }, [isHandsFreeActive, currentStepIndex, selectedRecipe]);
 
   // Inicializar Service Worker y verificar soporte de Notificaciones al montar
   useEffect(() => {
@@ -502,25 +651,85 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       const data = await res.json();
       setEvalFeedbackResult(data);
 
-      // Award XP & add to history
+      // Award XP & calculate level progression based on CULINARY_LEVELS
       const newXp = userProfile.xp + (data.xpAwarded || 50);
       let newLevel = userProfile.level;
       let newLevelTitle = userProfile.levelTitle;
 
-      if (newXp >= 300 && userProfile.level < 4) {
+      if (newXp >= 900) {
+        newLevel = 5;
+        newLevelTitle = 'Nivel 5: Chef Intuitivo';
+      } else if (newXp >= 500) {
         newLevel = 4;
-        newLevelTitle = 'Nivel 4: Chef de Casa';
-      } else if (newXp >= 180 && userProfile.level < 3) {
+        newLevelTitle = 'Nivel 4: Alquimista de Sabores';
+      } else if (newXp >= 250) {
         newLevel = 3;
-        newLevelTitle = 'Nivel 3: Cocinero Práctico';
-      } else if (newXp >= 80 && userProfile.level < 2) {
+        newLevelTitle = 'Nivel 3: Cocinero Casero Seguro';
+      } else if (newXp >= 100) {
         newLevel = 2;
-        newLevelTitle = 'Nivel 2: Pinche de Cocina';
+        newLevelTitle = 'Nivel 2: Aprendiz del Fuego';
+      } else {
+        newLevel = 1;
+        newLevelTitle = 'Nivel 1: Cero Absoluto';
+      }
+
+      // Check if user leveled up
+      if (newLevel > userProfile.level) {
+        const newLevelMeta = CULINARY_LEVELS.find((l) => l.level === newLevel);
+        setLevelUpCelebration({
+          oldLevel: userProfile.level,
+          newLevel,
+          newTitle: newLevelMeta?.title || newLevelTitle,
+          newBadge: newLevelMeta?.badge || '🎉',
+          unlockedTechniques: newLevelMeta?.unlockedTechniques || [],
+        });
       }
 
       const updatedMistakes = [...userProfile.pastMistakes];
       if (data.detectedMistake && !updatedMistakes.includes(data.detectedMistake)) {
         updatedMistakes.push(data.detectedMistake);
+      }
+
+      const updatedSkills = [...(userProfile.masteredSkills || [])];
+      if (data.skillImproved && !updatedSkills.includes(data.skillImproved)) {
+        updatedSkills.push(data.skillImproved);
+      }
+
+      const updatedPreferences = [...(userProfile.flavorPreferences || [])];
+      if (data.tastePreferenceDetected && !updatedPreferences.includes(data.tastePreferenceDetected)) {
+        updatedPreferences.push(data.tastePreferenceDetected);
+        if (onLearnFact) {
+          onLearnFact('gustos', data.tastePreferenceDetected);
+        }
+      }
+
+      if (data.detectedMistake && onLearnFact) {
+        onLearnFact('fuego', `Ojo en ${selectedRecipe.title}: ${data.detectedMistake}`);
+      }
+
+      if (data.skillImproved && onLearnFact) {
+        onLearnFact('fortaleza', `Dominó ${data.skillImproved} preparando ${selectedRecipe.title}`);
+      }
+
+      const updatedBoosters = [...(userProfile.flavorBoostersLearned || [])];
+      if (data.flavorBoosterLearned) {
+        updatedBoosters.unshift({
+          dish: selectedRecipe.title,
+          tip: data.flavorBoosterLearned,
+          category: 'acidez',
+          date: 'Hoy',
+        });
+      }
+
+      let newAiTone = userProfile.aiToneSetting || 'mentor_paciencia';
+      let newComplexity = userProfile.complexityLevel || 'basico_guiado';
+
+      if (newLevel >= 4) {
+        newAiTone = 'chef_creativo';
+        newComplexity = 'audaz_creativo';
+      } else if (newLevel >= 3) {
+        newAiTone = 'complice_culinario';
+        newComplexity = 'intermedio_practico';
       }
 
       const newRecord = {
@@ -531,6 +740,9 @@ export const CookingMode: React.FC<CookingModeProps> = ({
         difficultyFaced: evalDifficulty,
         mentorTip: data.personalizedAdvice || data.mentorNote,
         xpEarned: data.xpAwarded || 50,
+        skillImproved: data.skillImproved,
+        flavorBoosterLearned: data.flavorBoosterLearned,
+        tastePreferenceDetected: data.tastePreferenceDetected,
       };
 
       onUpdateProfile({
@@ -538,6 +750,11 @@ export const CookingMode: React.FC<CookingModeProps> = ({
         level: newLevel,
         levelTitle: newLevelTitle,
         pastMistakes: updatedMistakes,
+        masteredSkills: updatedSkills,
+        flavorPreferences: updatedPreferences,
+        flavorBoostersLearned: updatedBoosters,
+        aiToneSetting: newAiTone,
+        complexityLevel: newComplexity,
         cookedHistory: [newRecord, ...userProfile.cookedHistory],
       });
     } catch (err) {
@@ -555,163 +772,803 @@ export const CookingMode: React.FC<CookingModeProps> = ({
 
   const activeCuisineMeta = WORLD_CUISINES.find((c) => c.id === selectedCuisine);
 
+  const currentLevel = (userProfile.level || 1) as CulinaryLevel;
+  const currentLevelMeta = CULINARY_LEVELS.find((l) => l.level === currentLevel) || CULINARY_LEVELS[0];
+  const nextLevelMeta = CULINARY_LEVELS.find((l) => l.level === currentLevel + 1) || null;
+
+  const recommendedRecipeObj = mentorRecommendation?.recommendedRecipeId
+    ? recipesList.find((r) => r.id === mentorRecommendation.recommendedRecipeId) || null
+    : null;
+
   const filteredRecipes = recipesList.filter((r) => {
-    if (selectedCuisine === 'todas') return true;
+    // Cuisine filter
+    let matchesCuisine = true;
     if (selectedCuisine === 'economica_bbb') {
-      return r.isBudgetFriendly || r.cuisine === 'economica_bbb';
+      matchesCuisine = r.isBudgetFriendly || r.cuisine === 'economica_bbb';
+    } else if (selectedCuisine !== 'todas') {
+      matchesCuisine = r.cuisine === selectedCuisine;
     }
-    return r.cuisine === selectedCuisine;
+
+    // Level progression filter
+    let matchesLevel = true;
+    const rLevel = r.requiredLevel || 1;
+    if (levelFilter === 'my_level') {
+      matchesLevel = rLevel <= userProfile.level;
+    } else if (typeof levelFilter === 'number') {
+      matchesLevel = rLevel === levelFilter;
+    }
+
+    return matchesCuisine && matchesLevel;
   });
 
   return (
     <div className="space-y-6">
-      {/* Top Banner & Recipe Selector */}
-      <div className="bg-gradient-to-r from-amber-600/10 via-orange-500/5 to-transparent p-6 rounded-2xl border border-stone-200">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-semibold mb-2">
-              <ChefHat className="w-3.5 h-3.5 text-amber-700" />
-              <span>Modo Cocinar Paso a Paso</span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-stone-900 font-serif">
-              Cocina sin miedo con tu Mentor
-            </h2>
-            <p className="text-stone-600 text-sm mt-1 max-w-2xl">
-              Fase 1: Mise en Place (preparar todo con fuego apagado). Fase 2: Cocción guiada con temporizadores y control exacto de la llama.
-            </p>
-          </div>
+      {/* Selector Principal de Etapas (Flujo Claro y Sin Caos Visual) */}
+      <div className="bg-white p-2 rounded-2xl border border-stone-200 shadow-xs flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 sm:gap-2">
+        <button
+          onClick={() => {
+            setCookingStage('receta');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            cookingStage === 'receta'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-stone-600 hover:bg-stone-100'
+          }`}
+        >
+          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-mono ${
+            cookingStage === 'receta' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'
+          }`}>1</span>
+          <span className="truncate">1. Elegir Receta</span>
+        </button>
 
-          <button
-            onClick={() => setShowGeneratorModal(true)}
-            className="px-4 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-sm font-semibold flex items-center gap-2 shadow-md transition-all shrink-0"
-          >
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>Tengo estos 3 ingredientes...</span>
-          </button>
-        </div>
+        <ChevronRight className="w-4 h-4 text-stone-300 shrink-0 hidden sm:block" />
 
-        {/* World Cuisines & BBB Filter Bar */}
-        <div className="mt-5 pt-4 border-t border-stone-200/80">
-          <div className="flex items-center justify-between gap-2 mb-2.5">
-            <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider flex items-center gap-1.5">
-              <span>🌍 Explorador de Gastronomías & Recetas Económicas (BBB)</span>
-            </span>
-            <span className="text-[11px] text-amber-800 font-semibold bg-amber-100/80 px-2 py-0.5 rounded-full">
-              {filteredRecipes.length} receta{filteredRecipes.length !== 1 ? 's' : ''} disponible{filteredRecipes.length !== 1 ? 's' : ''}
-            </span>
-          </div>
+        <button
+          onClick={() => {
+            setCookingStage('mise');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            cookingStage === 'mise'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-stone-600 hover:bg-stone-100'
+          }`}
+        >
+          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-mono ${
+            cookingStage === 'mise' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'
+          }`}>2</span>
+          <span className="truncate">2. Preparar (Fuego Apagado)</span>
+          {allMiseChecked && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+        </button>
 
-          <div className="flex flex-wrap gap-2">
-            {WORLD_CUISINES.map((c) => {
-              const isSelected = selectedCuisine === c.id;
-              return (
+        <ChevronRight className="w-4 h-4 text-stone-300 shrink-0 hidden sm:block" />
+
+        <button
+          onClick={() => {
+            setCookingStage('fuegos');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            cookingStage === 'fuegos'
+              ? 'bg-stone-900 text-white shadow-xs'
+              : 'text-stone-600 hover:bg-stone-100'
+          }`}
+        >
+          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-mono ${
+            cookingStage === 'fuegos' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'
+          }`}>3</span>
+          <Flame className="w-3.5 h-3.5 text-orange-400" />
+          <span className="truncate">3. En los Fuegos</span>
+        </button>
+      </div>
+
+      {/* ========================================================= */}
+      {/* ETAPA 1: SELECCIÓN Y DETALLE DE LA RECETA                 */}
+      {/* ========================================================= */}
+      {cookingStage === 'receta' && (
+        <div className="space-y-6">
+          {/* Barra de Progreso y Nivel del Aprendiz ("Evolución Culinaria") */}
+          <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-100/40 p-4 sm:p-5 rounded-2xl border border-amber-200/90 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-600 text-white flex items-center justify-center text-2xl shadow-sm shrink-0">
+                  {currentLevelMeta.badge}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">Tu Nivel Culinario</span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-950 font-mono">
+                      {userProfile.xp} XP
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-stone-900">
+                    {currentLevelMeta.title}
+                  </h3>
+                  <p className="text-xs text-stone-600 mt-0.5">
+                    {currentLevelMeta.tagline}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-center">
                 <button
-                  key={c.id}
-                  onClick={() => {
-                    setSelectedCuisine(c.id);
-                    const matching = recipesList.filter((r) => {
-                      if (c.id === 'todas') return true;
-                      if (c.id === 'economica_bbb') return r.isBudgetFriendly || r.cuisine === 'economica_bbb';
-                      return r.cuisine === c.id;
-                    });
-                    if (matching.length > 0 && !matching.some((m) => m.id === selectedRecipe.id)) {
-                      setSelectedRecipe(matching[0]);
-                      setCurrentStepIndex(0);
-                      setMiseEnPlaceChecked({});
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-500/40'
-                      : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
-                  }`}
+                  onClick={() => setShowRoadmapModal(true)}
+                  className="px-3.5 py-2 rounded-xl bg-white hover:bg-stone-50 border border-amber-300 text-amber-950 text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
                 >
-                  <span className="text-sm">{c.flag}</span>
-                  <span>{c.name}</span>
+                  <span>🗺️</span>
+                  <span>Ver Ruta de los 5 Niveles</span>
                 </button>
-              );
-            })}
+              </div>
+            </div>
+
+            {/* XP Progress Bar */}
+            <div className="mt-3.5 pt-3 border-t border-amber-200/60">
+              <div className="flex items-center justify-between text-xs text-stone-600 mb-1.5 font-medium">
+                <span>Progreso hacia {nextLevelMeta ? nextLevelMeta.shortTitle : 'Maestría Total'}</span>
+                <span className="font-mono font-bold text-stone-800">{userProfile.xp} / {currentLevelMeta.targetXp} XP</span>
+              </div>
+              <div className="w-full bg-stone-200/80 h-2.5 rounded-full overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-amber-500 to-orange-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.max(8, (userProfile.xp / currentLevelMeta.targetXp) * 100))}%` }}
+                />
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-stone-500 mt-1.5 gap-1">
+                <span className="truncate">🎯 Habilidades actuales: {currentLevelMeta.unlockedTechniques.slice(0, 2).join(' • ')}</span>
+                {nextLevelMeta && (
+                  <span className="text-amber-800 font-semibold shrink-0">
+                    Próximo desbloqueo: Nivel {nextLevelMeta.level} a los {currentLevelMeta.targetXp} XP
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Active Cultural Wisdom Card */}
-          {activeCuisineMeta && activeCuisineMeta.id !== 'todas' && (
-            <div className="mt-3.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-300/80 text-stone-900 shadow-xs">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-amber-200/80 pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">{activeCuisineMeta.flag}</span>
+          {/* Tarjeta de Recomendación Inteligente de la IA para tu Nivel */}
+          {mentorRecommendation && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/90 border-2 border-amber-300/90 text-stone-900 shadow-xs">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 text-xl shadow-xs">
+                    💡
+                  </div>
                   <div>
-                    <h4 className="font-extrabold text-xs sm:text-sm text-amber-950 font-serif">
-                      {activeCuisineMeta.name} — {activeCuisineMeta.tagline}
-                    </h4>
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wide">
+                        Recomendación Pedagógica del Chef Mentor
+                      </span>
+                      <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
+                        {mentorRecommendation.headline}
+                      </span>
+                    </div>
+                    <p className="text-xs sm:text-sm text-stone-800 font-medium leading-relaxed">
+                      "{mentorRecommendation.mentorReasoning}"
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-950">
+                      <span className="font-bold">🎯 Meta clave a desbloquear:</span>
+                      <span className="text-stone-700 bg-white/70 px-2 py-0.5 rounded-md border border-amber-200">
+                        {mentorRecommendation.learningFocus}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 self-start sm:self-auto uppercase">
-                  Reglas de Oro Culinarias
+
+                {recommendedRecipeObj && (
+                  <button
+                    onClick={() => {
+                      setSelectedRecipe(recommendedRecipeObj);
+                      setCurrentStepIndex(0);
+                      setMiseEnPlaceChecked({});
+                      window.scrollTo({ top: 380, behavior: 'smooth' });
+                    }}
+                    className="px-4 py-2.5 bg-stone-900 hover:bg-stone-800 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition shrink-0 shadow-sm cursor-pointer"
+                  >
+                    <span>{recommendedRecipeObj.countryFlag || '🍳'}</span>
+                    <span>Cocinar Ahora: {recommendedRecipeObj.title.split('(')[0]}</span>
+                    <ChevronRight className="w-4 h-4 text-amber-400" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Top Banner & Recipe Selector */}
+          <div className="bg-gradient-to-r from-amber-600/10 via-orange-500/5 to-transparent p-6 rounded-2xl border border-stone-200">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-semibold mb-2">
+                  <ChefHat className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Etapa 1: Explorar y Elegir qué Cocinar</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-stone-900 font-serif">
+                  Catálogo de Recetas Evolutivas
+                </h2>
+                <p className="text-stone-600 text-sm mt-1 max-w-2xl">
+                  Selecciona una receta según tu nivel o estilo de cocina, o dile al Chef qué 3 ingredientes tienes para inventar un plato adaptado a ti.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowGeneratorModal(true)}
+                className="px-4 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-sm font-semibold flex items-center gap-2 shadow-md transition-all shrink-0 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Tengo estos 3 ingredientes...</span>
+              </button>
+            </div>
+
+            {/* Filtro por Nivel Culinario */}
+            <div className="mt-5 pt-4 border-t border-stone-200/80">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🎓 Filtrar por Nivel de Complejidad:</span>
+                </span>
+                <span className="text-[11px] text-stone-500">
+                  Tu nivel actual: <strong className="text-amber-800">Nivel {userProfile.level}</strong>
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-2.5 text-xs">
-                <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/60 shadow-2xs">
-                  <span className="font-bold text-amber-950 block mb-0.5 flex items-center gap-1">
-                    <span>🌟</span> Regla de Oro:
-                  </span>
-                  <p className="text-stone-700 leading-snug text-[11px]">{activeCuisineMeta.goldenRule}</p>
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                <button
+                  onClick={() => setLevelFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    levelFilter === 'all'
+                      ? 'bg-stone-900 text-white shadow-xs'
+                      : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
+                  }`}
+                >
+                  Todas las Recetas ({recipesList.length})
+                </button>
+                <button
+                  onClick={() => setLevelFilter('my_level')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    levelFilter === 'my_level'
+                      ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/40'
+                      : 'bg-amber-100/70 text-amber-950 hover:bg-amber-100 border border-amber-300'
+                  }`}
+                >
+                  <span>{currentLevelMeta.badge}</span>
+                  <span>Aptas para Mi Nivel (Hasta Nivel {userProfile.level})</span>
+                </button>
+                <button
+                  onClick={() => setLevelFilter(1)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                    levelFilter === 1
+                      ? 'bg-stone-800 text-white'
+                      : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                  }`}
+                >
+                  🌱 Nivel 1 (Cero Absoluto)
+                </button>
+                <button
+                  onClick={() => setLevelFilter(2)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                    levelFilter === 2
+                      ? 'bg-stone-800 text-white'
+                      : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                  }`}
+                >
+                  🔥 Nivel 2 (Aprendiz)
+                </button>
+                <button
+                  onClick={() => setLevelFilter(3)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                    levelFilter === 3
+                      ? 'bg-stone-800 text-white'
+                      : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                  }`}
+                >
+                  🍳 Nivel 3 (Casero Seguro)
+                </button>
+                <button
+                  onClick={() => setLevelFilter(4)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                    levelFilter === 4
+                      ? 'bg-stone-800 text-white'
+                      : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                  }`}
+                >
+                  ✨ Nivel 4 (Avanzado)
+                </button>
+              </div>
+            </div>
+
+            {/* World Cuisines & BBB Filter Bar */}
+            <div className="mt-4 pt-3 border-t border-stone-200/80">
+              <div className="flex items-center justify-between gap-2 mb-2.5">
+                <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🌍 Gastronomías del Mundo & Recetas BBB:</span>
+                </span>
+                <span className="text-[11px] text-amber-800 font-semibold bg-amber-100/80 px-2 py-0.5 rounded-full">
+                  {filteredRecipes.length} receta{filteredRecipes.length !== 1 ? 's' : ''} encontrada{filteredRecipes.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {WORLD_CUISINES.map((c) => {
+                  const isSelected = selectedCuisine === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        setSelectedCuisine(c.id);
+                        const matching = recipesList.filter((r) => {
+                          if (c.id === 'todas') return true;
+                          if (c.id === 'economica_bbb') return r.isBudgetFriendly || r.cuisine === 'economica_bbb';
+                          return r.cuisine === c.id;
+                        });
+                        if (matching.length > 0 && !matching.some((m) => m.id === selectedRecipe.id)) {
+                          setSelectedRecipe(matching[0]);
+                          setCurrentStepIndex(0);
+                          setMiseEnPlaceChecked({});
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        isSelected
+                          ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-500/40'
+                          : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
+                      }`}
+                    >
+                      <span className="text-sm">{c.flag}</span>
+                      <span>{c.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Active Cultural Wisdom Card */}
+              {activeCuisineMeta && activeCuisineMeta.id !== 'todas' && (
+                <div className="mt-3.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-300/80 text-stone-900 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-amber-200/80 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{activeCuisineMeta.flag}</span>
+                      <div>
+                        <h4 className="font-extrabold text-xs sm:text-sm text-amber-950 font-serif">
+                          {activeCuisineMeta.name} — {activeCuisineMeta.tagline}
+                        </h4>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 self-start sm:self-auto uppercase">
+                      Reglas de Oro Culinarias
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-2.5 text-xs">
+                    <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/60 shadow-2xs">
+                      <span className="font-bold text-amber-950 block mb-0.5 flex items-center gap-1">
+                        <span>🌟</span> Regla de Oro:
+                      </span>
+                      <p className="text-stone-700 leading-snug text-[11px]">{activeCuisineMeta.goldenRule}</p>
+                    </div>
+                    <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/60 shadow-2xs">
+                      <span className="font-bold text-amber-950 block mb-0.5 flex items-center gap-1">
+                        <span>🧅</span> Base Aromática:
+                      </span>
+                      <p className="text-stone-700 leading-snug text-[11px]">{activeCuisineMeta.baseAromatics}</p>
+                    </div>
+                    <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/60 shadow-2xs">
+                      <span className="font-bold text-amber-950 block mb-0.5 flex items-center gap-1">
+                        <span>💰</span> Ahorro BBB (Despensa):
+                      </span>
+                      <p className="text-stone-700 leading-snug text-[11px]">{activeCuisineMeta.budgetSecret}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/60 shadow-2xs">
-                  <span className="font-bold text-amber-950 block mb-0.5 flex items-center gap-1">
-                    <span>🧅</span> Base Aromática:
-                  </span>
-                  <p className="text-stone-700 leading-snug text-[11px]">{activeCuisineMeta.baseAromatics}</p>
+              )}
+            </div>
+
+            {/* Recipe Pills Selection */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {filteredRecipes.length > 0 ? (
+                filteredRecipes.map((r) => {
+                  const reqLvl = r.requiredLevel || 1;
+                  const isLocked = reqLvl > userProfile.level;
+                  const isSelected = selectedRecipe.id === r.id;
+
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => {
+                        setSelectedRecipe(r);
+                        setCurrentStepIndex(0);
+                        setMiseEnPlaceChecked({});
+                      }}
+                      className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        isSelected
+                          ? 'bg-stone-900 text-white shadow-md ring-2 ring-amber-500/40'
+                          : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
+                      }`}
+                    >
+                      <span>{r.countryFlag || '🍳'}</span>
+                      <span className="truncate max-w-[200px] sm:max-w-none">{r.title.split('(')[0]}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono font-bold ${
+                        isSelected
+                          ? 'bg-white/20 text-amber-300'
+                          : isLocked
+                          ? 'bg-stone-200 text-stone-700'
+                          : 'bg-amber-100 text-amber-900'
+                      }`}>
+                        {isLocked ? `🔒 N${reqLvl}` : `N${reqLvl}`}
+                      </span>
+                      <span className="text-[11px] opacity-75">({r.totalTimeMinutes}m)</span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="p-3 bg-white/80 rounded-xl border border-dashed border-stone-300 text-xs text-stone-600 flex items-center justify-between w-full">
+                  <span>No hay recetas que coincidan con estos filtros. ¡Prueba a cambiar el nivel o crea una con tus ingredientes!</span>
+                  <button
+                    onClick={() => {
+                      setGeneratorCuisine(selectedCuisine);
+                      setShowGeneratorModal(true);
+                    }}
+                    className="px-3 py-1 bg-amber-600 text-white font-bold rounded-lg text-xs hover:bg-amber-700 cursor-pointer"
+                  >
+                    Crear con IA
+                  </button>
                 </div>
-                <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/60 shadow-2xs">
-                  <span className="font-bold text-amber-950 block mb-0.5 flex items-center gap-1">
-                    <span>💰</span> Ahorro BBB (Despensa):
-                  </span>
-                  <p className="text-stone-700 leading-snug text-[11px]">{activeCuisineMeta.budgetSecret}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Recipe Header Card with Safety Alerts & Details */}
+          <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-sm">
+            <div className="relative h-48 sm:h-64 w-full bg-stone-100">
+              <img
+                src={selectedRecipe.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'}
+                alt={selectedRecipe.title}
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-900/85 via-stone-900/35 to-transparent flex items-end p-5">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                      (selectedRecipe.requiredLevel || 1) <= userProfile.level
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-amber-400 text-stone-900'
+                    }`}>
+                      {(selectedRecipe.requiredLevel || 1) <= userProfile.level
+                        ? `🌱 Nivel ${selectedRecipe.requiredLevel || 1} (Desbloqueado)`
+                        : `🔒 Nivel ${selectedRecipe.requiredLevel || 1} (Desafío)`}
+                    </span>
+                    <span className="text-xs bg-amber-500 text-stone-900 px-2.5 py-0.5 rounded-full font-bold">
+                      {selectedRecipe.difficulty}
+                    </span>
+                    <span className="text-xs bg-stone-800/80 text-white px-2.5 py-0.5 rounded-full font-semibold">
+                      {selectedRecipe.steps.length} pasos sencillos
+                    </span>
+                  </div>
+                  <h3 className="text-2xl sm:text-3xl font-extrabold text-white">
+                    {selectedRecipe.title}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-stone-200 max-w-xl mt-1">
+                    {selectedRecipe.description}
+                  </p>
                 </div>
               </div>
             </div>
-          )}
-        </div>
 
-        {/* Recipe Pills Selection */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {filteredRecipes.length > 0 ? (
-            filteredRecipes.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => {
-                  setSelectedRecipe(r);
-                  setCurrentStepIndex(0);
-                  setMiseEnPlaceChecked({});
-                }}
-                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 ${
-                  selectedRecipe.id === r.id
-                    ? 'bg-stone-900 text-white shadow-md'
-                    : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
+            {/* Meta Pedagógica de la Receta */}
+            {selectedRecipe.learningGoal && (
+              <div className="bg-amber-100/70 border-b border-amber-200/90 px-5 py-2.5 flex items-center gap-2 text-xs text-amber-950">
+                <span className="text-base shrink-0">🎯</span>
+                <div>
+                  <strong className="font-bold text-amber-900">Lo que aprenderás con este plato:</strong>{' '}
+                  <span className="font-medium text-stone-800">{selectedRecipe.learningGoal}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Aviso de Desafío si la receta supera el nivel del usuario */}
+            {(selectedRecipe.requiredLevel || 1) > userProfile.level && (
+              <div className="bg-orange-50 border-b border-orange-200 px-5 py-2 text-xs text-orange-950 flex items-center gap-2">
+                <span className="text-sm shrink-0">⚡</span>
+                <p>
+                  <strong>Desafío de Nivel Superior:</strong> Estás en Nivel {userProfile.level} y esta receta es de Nivel {selectedRecipe.requiredLevel}. ¡No te preocupes! El Chef Mentor te guiará paso a paso con las alertas de fuego activadas.
+                </p>
+              </div>
+            )}
+
+            {/* Cultural & Budget Badges & Portion Scaler */}
+            <div className="bg-stone-50 border-b border-stone-200 px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-900 text-white font-bold text-xs shadow-2xs">
+                  <span>{selectedRecipe.countryFlag || '🍳'}</span>
+                  <span>{selectedRecipe.cuisineName || 'Cocina Internacional'}</span>
+                </span>
+
+                {selectedRecipe.isBudgetFriendly && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-950 font-bold text-xs border border-emerald-300">
+                    <span>💰</span>
+                    <span>{selectedRecipe.estimatedCostLabel || 'Económica BBB'}</span>
+                  </span>
+                )}
+
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 font-semibold text-xs">
+                  <Clock className="w-3 h-3 text-amber-700" />
+                  <span>{selectedRecipe.totalTimeMinutes} min totales</span>
+                </span>
+              </div>
+
+              {/* Portion Scaler Control (1, 2, 4 porciones) */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center bg-white border border-stone-300 rounded-xl p-0.5 shadow-2xs">
+                  <span className="text-[11px] text-stone-500 font-bold px-2 flex items-center gap-1">
+                    <Users className="w-3.5 h-3.5 text-stone-400" />
+                    <span>Porciones:</span>
+                  </span>
+                  {[1, 2, 4].map((serv) => (
+                    <button
+                      key={serv}
+                      onClick={() => setTargetServings(serv)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        targetServings === serv
+                          ? 'bg-amber-500 text-stone-950 shadow-xs'
+                          : 'text-stone-600 hover:bg-stone-100'
+                      }`}
+                    >
+                      {serv}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Add to Smart Shopping List */}
+                <button
+                  onClick={() => {
+                    try {
+                      const currentList = JSON.parse(localStorage.getItem('chef_cero_shopping_list') || '[]');
+                      const newItems = selectedRecipe.miseEnPlace.map((item, i) => ({
+                        id: 'recipe-' + Date.now() + '-' + i,
+                        name: scaleIngredientText(item, selectedRecipe.servings || 2, targetServings),
+                        category: (item.toLowerCase().includes('cebolla') || item.toLowerCase().includes('ajo') || item.toLowerCase().includes('tomate') || item.toLowerCase().includes('papa') || item.toLowerCase().includes('zanahoria'))
+                          ? 'Verdulería & Frutas'
+                          : (item.toLowerCase().includes('pollo') || item.toLowerCase().includes('huevo') || item.toLowerCase().includes('carne'))
+                          ? 'Carnicería & Huevos'
+                          : (item.toLowerCase().includes('fideo') || item.toLowerCase().includes('arroz') || item.toLowerCase().includes('harina'))
+                          ? 'Almacén & Granos'
+                          : (item.toLowerCase().includes('queso') || item.toLowerCase().includes('mantequilla') || item.toLowerCase().includes('leche'))
+                          ? 'Lácteos & Quesos'
+                          : 'Especias & Aceites',
+                        checked: false,
+                      }));
+                      localStorage.setItem('chef_cero_shopping_list', JSON.stringify([...newItems, ...currentList]));
+                      setAddedToShoppingNotice(`¡${selectedRecipe.title} agregada a la lista de compras!`);
+                      setTimeout(() => setAddedToShoppingNotice(null), 3000);
+                      setIsShoppingModalOpen(true);
+                    } catch {}
+                  }}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                  title="Enviar los ingredientes de esta receta a la lista de compras del súper"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Comprar al Súper</span>
+                </button>
+              </div>
+            </div>
+
+            {addedToShoppingNotice && (
+              <div className="bg-emerald-100 border-b border-emerald-300 px-5 py-2 text-xs font-bold text-emerald-950 flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-700" />
+                <span>{addedToShoppingNotice}</span>
+              </div>
+            )}
+
+            {/* Cultural Secret Card */}
+            {selectedRecipe.culturalSecret && (
+              <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent p-4 border-b border-amber-200/90 flex items-start gap-3">
+                <span className="text-xl shrink-0 mt-0.5">✨</span>
+                <div>
+                  <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                    Secreto Cultural de Oro ({selectedRecipe.cuisineName || 'Chef Cero'}):
+                  </h4>
+                  <p className="text-xs text-amber-900 mt-0.5 leading-relaxed font-medium">
+                    {selectedRecipe.culturalSecret}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Pantry Substitutes (Ahorro Inteligente BBB) */}
+            {selectedRecipe.pantrySubstitutes && selectedRecipe.pantrySubstitutes.length > 0 && (
+              <div className="bg-emerald-50/90 border-b border-emerald-200 p-4">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950 uppercase tracking-wider mb-2">
+                  <span className="text-base">💡</span>
+                  <span>Ahorro Inteligente BBB: Sustitutos de Despensa</span>
+                </div>
+                <div className="space-y-1.5">
+                  {selectedRecipe.pantrySubstitutes.map((sub, idx) => (
+                    <div key={idx} className="text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-baseline gap-1">
+                      <span className="font-semibold text-stone-600 line-through">{sub.original}</span>
+                      <span className="hidden sm:inline text-stone-400">→</span>
+                      <span className="font-bold text-emerald-800">Usa: {sub.substitute}</span>
+                      <span className="text-emerald-700/90 text-[11px]">({sub.reason})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Safety Warnings */}
+            {selectedRecipe.safetyAlerts.length > 0 && (
+              <div className="bg-amber-50 p-4 border-b border-amber-200 flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+                    Reglas de Oro de Seguridad para este plato:
+                  </h4>
+                  <ul className="text-xs text-amber-900/90 list-disc list-inside mt-1 space-y-0.5 font-medium">
+                    {selectedRecipe.safetyAlerts.map((alert, i) => (
+                      <li key={i}>{alert}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* Barra de Avance a Etapa 2 (Mise en Place) */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-transparent flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div>
+                <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">
+                  Paso siguiente del flujo
+                </span>
+                <h4 className="font-extrabold text-stone-900 text-sm sm:text-base">
+                  ¿Prepararás {selectedRecipe.title}?
+                </h4>
+                <p className="text-xs text-stone-600 mt-0.5">
+                  Primero organizaremos y mediremos los {selectedRecipe.miseEnPlace.length} ingredientes con la hornilla apagada.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <button
+                  onClick={() => {
+                    setCookingStage('fuegos');
+                    setCurrentStepIndex(0);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="px-3.5 py-2.5 bg-white hover:bg-stone-100 text-stone-700 font-semibold border border-stone-300 rounded-xl text-xs transition"
+                >
+                  Saltar a cocinar
+                </button>
+
+                <button
+                  onClick={() => {
+                    setCookingStage('mise');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="flex-1 sm:flex-none px-5 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition"
+                >
+                  <span>Preparar Ingredientes (Fase 2)</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* ETAPA 2: MISE EN PLACE (FUEGO APAGADO)                    */}
+      {/* ========================================================= */}
+      {cookingStage === 'mise' && (
+        <div className="space-y-6">
+          {/* Phase 1: Mise en Place Checklist */}
+          <div className="bg-white rounded-2xl border-2 border-amber-300 p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+              <div>
+                <span className="text-[11px] font-extrabold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full uppercase tracking-wider block w-fit mb-1">
+                  Etapa 2: Preparación con Fuego Apagado
+                </span>
+                <h3 className="font-extrabold text-xl text-stone-900">
+                  Mise en Place para {selectedRecipe.title}
+                </h3>
+              </div>
+              <span
+                className={`text-xs px-3 py-1.5 rounded-xl font-bold self-start sm:self-auto flex items-center gap-1.5 ${
+                  allMiseChecked
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : 'bg-amber-100 text-amber-900 border border-amber-300'
                 }`}
               >
-                <span>{r.countryFlag || '🍳'}</span>
-                <span>{r.title}</span>
-                <span className="text-[11px] opacity-75">({r.totalTimeMinutes} min)</span>
-              </button>
-            ))
-          ) : (
-            <div className="p-3 bg-white/80 rounded-xl border border-dashed border-stone-300 text-xs text-stone-600 flex items-center justify-between w-full">
-              <span>No hay recetas predeterminadas en esta sección. ¡Crea una al instante con tus ingredientes!</span>
+                {allMiseChecked ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>¡Todo picado y medido!</span>
+                  </>
+                ) : (
+                  <span>Prepara todo antes de calentar la sartén</span>
+                )}
+              </span>
+            </div>
+
+            <p className="text-xs text-stone-600 leading-relaxed">
+              El 90% de los platos que se queman o pegan ocurren porque el cocinero novato empieza a picar ajo o medir agua <em>mientras</em> el aceite ya está humeando. Pon cada ingrediente en su platito o taza medido antes de encender la estufa:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {selectedRecipe.miseEnPlace.map((item, idx) => {
+                const isChecked = !!miseEnPlaceChecked[idx];
+                const scaledItem = scaleIngredientText(item, selectedRecipe.servings || 2, targetServings);
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => toggleMiseItem(idx)}
+                    className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                      isChecked
+                        ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
+                        : 'bg-stone-50 border-stone-200 text-stone-800 hover:bg-stone-100'
+                    }`}
+                  >
+                    {isChecked ? (
+                      <CheckSquare className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <Square className="w-5 h-5 text-stone-400 shrink-0 mt-0.5" />
+                    )}
+                    <span className={`text-xs sm:text-sm font-medium leading-relaxed ${isChecked ? 'line-through text-stone-500' : ''}`}>
+                      {scaledItem}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Quick check buttons */}
+            <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-xs text-stone-500">
               <button
                 onClick={() => {
-                  setGeneratorCuisine(selectedCuisine);
-                  setShowGeneratorModal(true);
+                  const allDone: Record<string, boolean> = {};
+                  selectedRecipe.miseEnPlace.forEach((_, idx) => (allDone[idx] = true));
+                  setMiseEnPlaceChecked(allDone);
                 }}
-                className="px-3 py-1 bg-amber-600 text-white font-bold rounded-lg text-xs hover:bg-amber-700"
+                className="text-amber-800 hover:text-amber-950 font-bold underline"
               >
-                Crear con IA
+                Marcar todos como listos
+              </button>
+
+              <button
+                onClick={() => setMiseEnPlaceChecked({})}
+                className="text-stone-500 hover:text-stone-700 underline"
+              >
+                Desmarcar todos
               </button>
             </div>
-          )}
+
+            {/* Stage 2 Action Bar */}
+            <div className="pt-4 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                onClick={() => {
+                  setCookingStage('receta');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 transition w-full sm:w-auto justify-center"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Volver a Elegir Receta</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setCookingStage('fuegos');
+                  setCurrentStepIndex(0);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="px-6 py-3 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl text-xs sm:text-sm flex items-center gap-2 shadow-md transition w-full sm:w-auto justify-center"
+              >
+                <Flame className="w-4 h-4 text-orange-400" />
+                <span>¡Todo Listo! Encender Hornilla e Iniciar Cocción →</span>
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* ETAPA 3: EN LOS FUEGOS (COCCIÓN PASO A PASO)               */}
+      {/* ========================================================= */}
+      {cookingStage === 'fuegos' && (
+        <div className="space-y-6">
 
       {/* Aviso de Comprobación de Notificaciones al Iniciar Temporizador */}
       {timerNotice && (
@@ -1237,7 +2094,11 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       )}
 
       {/* Phase 2: Guided Step-by-Step Cooking with Timers */}
-      <div className="bg-white rounded-2xl border-2 border-amber-300 p-5 sm:p-6 shadow-md space-y-5">
+      <div className={`bg-white rounded-2xl border-2 border-amber-300 p-5 sm:p-6 shadow-md space-y-5 transition-all ${
+        isFullScreenCooking
+          ? 'fixed inset-0 z-50 overflow-y-auto m-0 rounded-none border-none p-6 sm:p-10 bg-white max-w-none'
+          : ''
+      }`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-stone-100 pb-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -1329,6 +2190,51 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               )}
             </button>
 
+            {/* Botón Manos Libres por Voz Continuo (Estilo SideChef) */}
+            <button
+              onClick={() => {
+                const nextState = !isHandsFreeActive;
+                setIsHandsFreeActive(nextState);
+                if (nextState) {
+                  speakSpanishText('Modo manos libres activado. Puedes decir "siguiente", "atrás", "temporizador" o "emergencia".');
+                } else {
+                  speakSpanishText('Modo manos libres desactivado.');
+                }
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition cursor-pointer ${
+                isHandsFreeActive
+                  ? 'bg-amber-500 border-amber-600 text-stone-950 shadow-md ring-2 ring-amber-300 animate-pulse'
+                  : 'bg-stone-100 border-stone-200 text-stone-700 hover:bg-stone-200'
+              }`}
+              title={
+                isHandsFreeActive
+                  ? 'Micrófono activo: di "siguiente", "atrás" o "temporizador"'
+                  : 'Activar control por voz manos libres para cocinar sin tocar la pantalla'
+              }
+            >
+              {isHandsFreeActive ? (
+                <>
+                  <Mic className="w-3.5 h-3.5 text-stone-950" />
+                  <span>Manos Libres ON</span>
+                </>
+              ) : (
+                <>
+                  <MicOff className="w-3.5 h-3.5 text-stone-500" />
+                  <span className="hidden sm:inline">Manos Libres</span>
+                  <span className="sm:hidden">Voz</span>
+                </>
+              )}
+            </button>
+
+            {/* Modo Pantalla Completa Inmersivo */}
+            <button
+              onClick={() => setIsFullScreenCooking(!isFullScreenCooking)}
+              className="p-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-200 text-xs transition cursor-pointer"
+              title={isFullScreenCooking ? 'Salir de pantalla completa' : 'Modo cocina inmersivo pantalla completa'}
+            >
+              {isFullScreenCooking ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+
             {/* Botón de Pánico / S.O.S. Cocina */}
             <button
               onClick={() => setIsEmergencyModalOpen(true)}
@@ -1340,6 +2246,94 @@ export const CookingMode: React.FC<CookingModeProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Barra de Consultas Rápidas (Guía de Fuegos e Ingredientes desplegables) */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            onClick={() => setShowHeatGuideInCooking((prev) => !prev)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition ${
+              showHeatGuideInCooking
+                ? 'bg-orange-50 border-orange-300 text-orange-950 shadow-2xs'
+                : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5 text-orange-500" />
+            <span>{showHeatGuideInCooking ? 'Ocultar Guía de Fuegos' : 'Ver Guía de Fuegos'}</span>
+            {showHeatGuideInCooking ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+
+          <button
+            onClick={() => setShowIngredientsInCooking((prev) => !prev)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition ${
+              showIngredientsInCooking
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-2xs'
+                : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+            }`}
+          >
+            <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{showIngredientsInCooking ? 'Ocultar Ingredientes' : 'Ver Ingredientes / Mise'}</span>
+            {showIngredientsInCooking ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+
+          {isHandsFreeActive && (
+            <div className="px-3 py-1 bg-amber-50 border border-amber-300 text-amber-950 rounded-xl text-xs flex items-center gap-1.5 animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>Escuchando: di <strong>"Siguiente"</strong>, <strong>"Atrás"</strong> o <strong>"Tiempo"</strong></span>
+              {handsFreeLastHeard && (
+                <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-300 text-[10px]">
+                  "{handsFreeLastHeard}"
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Guía Visual de Intensidades de Fuego desplegable */}
+        {showHeatGuideInCooking && (
+          <div className="bg-amber-50/50 rounded-2xl border border-amber-200 p-4 space-y-2 animate-fade-in">
+            <h4 className="text-xs font-bold text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
+              <Flame className="w-4 h-4 text-orange-500" />
+              <span>Referencia: Intensidades de Fuego (Llama de la hornalla)</span>
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="p-3 rounded-xl border border-blue-200 bg-white text-xs">
+                <span className="font-bold text-blue-900 block">Fuego Bajo (Mínimo):</span>
+                <p className="text-[11px] text-stone-600 mt-0.5">Llama diminuta que apenas roza la base. Para huevos revueltos, dorar ajo sin quemar o tapar arroz.</p>
+              </div>
+              <div className="p-3 rounded-xl border border-amber-200 bg-white text-xs">
+                <span className="font-bold text-amber-900 block">Fuego Medio (Controlado):</span>
+                <p className="text-[11px] text-stone-600 mt-0.5">Llama al 50% de la base. Para sofreír cebollas transparentes, sellar pollo o saltear verduras.</p>
+              </div>
+              <div className="p-3 rounded-xl border border-red-200 bg-white text-xs">
+                <span className="font-bold text-red-900 block">Fuego Alto (¡Cuidado novatos!):</span>
+                <p className="text-[11px] text-stone-600 mt-0.5">Cubre todo el fondo. Solo para hervir agua de fideos o caldos. En 15 segundos quema mantequilla o sofritos.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Ingredientes de la receta desplegables sin salir del paso */}
+        {showIngredientsInCooking && (
+          <div className="bg-emerald-50/50 rounded-2xl border border-emerald-200 p-4 space-y-2 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                <CheckSquare className="w-4 h-4 text-emerald-600" />
+                <span>Ingredientes ({targetServings} {targetServings === 1 ? 'porción' : 'porciones'})</span>
+              </h4>
+              <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded-full">
+                Escalado automático
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {selectedRecipe.miseEnPlace.map((item, idx) => (
+                <div key={idx} className="p-2 bg-white rounded-lg border border-stone-200 text-stone-700 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                  <span>{scaleIngredientText(item, selectedRecipe.servings || 2, targetServings)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Step instruction card */}
         <div className="bg-stone-50 p-4 sm:p-5 rounded-2xl border border-stone-200 space-y-4">
@@ -1586,7 +2580,26 @@ export const CookingMode: React.FC<CookingModeProps> = ({
             </button>
           )}
         </div>
+
+        {/* Enlace para volver a revisar Mise en Place si lo necesita */}
+        <div className="pt-3 flex items-center justify-between border-t border-stone-100 text-xs">
+          <button
+            onClick={() => {
+              setCookingStage('mise');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="text-stone-500 hover:text-stone-800 flex items-center gap-1 font-medium transition"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            <span>Volver a Fase 2 (Mise en Place)</span>
+          </button>
+          <span className="text-stone-400 text-[11px]">
+            {selectedRecipe.title} • {selectedRecipe.cuisineName || 'Chef Cero'}
+          </span>
+        </div>
       </div>
+    </div>
+  )}
 
       {/* Modal: Custom Recipe Generator ("Tengo estos 3 ingredientes") */}
       {showGeneratorModal && (
@@ -1785,6 +2798,35 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                   </p>
                 </div>
 
+                {evalFeedbackResult.skillImproved && (
+                  <div className="p-3 bg-amber-50/90 border border-amber-300/80 rounded-xl text-left text-xs text-amber-950 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                      <Sparkles className="w-4 h-4 text-amber-600" />
+                      <span>Micro-Habilidad Incorporada:</span>
+                    </div>
+                    <p className="text-stone-700 pl-5 font-medium">{evalFeedbackResult.skillImproved}</p>
+                  </div>
+                )}
+
+                {evalFeedbackResult.flavorBoosterLearned && (
+                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl text-left text-xs text-orange-950 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-orange-900">
+                      <span>✨ Potenciador de Sabor (Flavor Booster):</span>
+                    </div>
+                    <p className="text-stone-700 pl-5 font-medium">{evalFeedbackResult.flavorBoosterLearned}</p>
+                  </div>
+                )}
+
+                {evalFeedbackResult.tastePreferenceDetected && (
+                  <div className="p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-left text-xs text-stone-700 flex items-center gap-2">
+                    <span className="text-base">👅</span>
+                    <div>
+                      <strong className="text-stone-900 font-semibold">Preferencia registrada:</strong>{' '}
+                      {evalFeedbackResult.tastePreferenceDetected}
+                    </div>
+                  </div>
+                )}
+
                 {evalFeedbackResult.detectedMistake && (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-left text-xs text-amber-950">
                     <strong>Punto anotado en tu Cuaderno:</strong> {evalFeedbackResult.detectedMistake}. El Chef te recordará este detalle en tus próximos platos.
@@ -1794,6 +2836,12 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                 {evalFeedbackResult.personalizedAdvice && (
                   <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-left text-xs text-stone-800">
                     <strong>Consejo para la próxima:</strong> {evalFeedbackResult.personalizedAdvice}
+                  </div>
+                )}
+
+                {evalFeedbackResult.toneEvolutionComment && (
+                  <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-xl text-left text-xs text-indigo-900">
+                    <strong>Progreso de relación con tu mentor:</strong> {evalFeedbackResult.toneEvolutionComment}
                   </div>
                 )}
 
@@ -1812,6 +2860,171 @@ export const CookingMode: React.FC<CookingModeProps> = ({
         </div>
       )}
 
+      {/* Modal: Ruta de los 5 Niveles Culinarios */}
+      {showRoadmapModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-stone-200 max-h-[90vh] overflow-y-auto space-y-5">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">🗺️</span>
+                <div>
+                  <h3 className="text-lg font-extrabold text-stone-900 font-serif">
+                    Ruta de Evolución: De Cero a Chef Intuitivo
+                  </h3>
+                  <p className="text-xs text-stone-500">
+                    Aprende paso a paso sin frustraciones. Cada nivel desbloquea nuevas técnicas seguras.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowRoadmapModal(false)}
+                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {CULINARY_LEVELS.map((lvl) => {
+                const isCurrent = userProfile.level === lvl.level;
+                const isPassed = userProfile.level > lvl.level;
+                const isLocked = userProfile.level < lvl.level;
+
+                return (
+                  <div
+                    key={lvl.level}
+                    className={`p-4 rounded-xl border transition-all ${
+                      isCurrent
+                        ? 'bg-amber-50/90 border-2 border-amber-400 shadow-sm ring-2 ring-amber-400/20'
+                        : isPassed
+                        ? 'bg-stone-50 border-stone-200 opacity-90'
+                        : 'bg-white border-stone-200 opacity-80'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-2xl p-2 rounded-xl bg-white shadow-2xs border border-stone-200 shrink-0">
+                          {lvl.badge}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-extrabold text-sm sm:text-base text-stone-900">
+                              {lvl.title}
+                            </h4>
+                            {isCurrent && (
+                              <span className="text-[10px] bg-amber-600 text-white font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                Tu Nivel Actual
+                              </span>
+                            )}
+                            {isPassed && (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                <span>✓</span> Superado
+                              </span>
+                            )}
+                            {isLocked && (
+                              <span className="text-[10px] bg-stone-100 text-stone-600 font-medium px-2 py-0.5 rounded-full">
+                                Próximo reto
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-stone-600 font-medium">{lvl.tagline}</p>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-mono font-bold text-stone-700 bg-white px-2.5 py-1 rounded-lg border border-stone-200 block sm:inline-block">
+                          {lvl.minXp} - {lvl.targetXp} XP
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-stone-700 mt-2 mb-3 leading-relaxed">
+                      {lvl.description}
+                    </p>
+
+                    <div className="bg-white/80 p-3 rounded-lg border border-stone-200/80 text-xs">
+                      <strong className="text-[11px] uppercase tracking-wider text-amber-900 font-bold block mb-1.5 flex items-center gap-1">
+                        <span>✨</span> Técnicas y micro-habilidades que dominas:
+                      </strong>
+                      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] text-stone-700">
+                        {lvl.unlockedTechniques.map((tech, idx) => (
+                          <li key={idx} className="flex items-center gap-1.5">
+                            <span className="text-amber-500 font-bold">✓</span>
+                            <span>{tech}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setShowRoadmapModal(false)}
+                className="px-5 py-2.5 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cerrar y Continuar Cocinando
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Celebración de Ascenso de Nivel Culinario */}
+      {levelUpCelebration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/70 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 text-center shadow-2xl border-4 border-amber-400 space-y-4 relative overflow-hidden">
+            {/* Top decoration */}
+            <div className="absolute -top-10 -right-10 w-28 h-28 bg-amber-400/20 rounded-full blur-xl pointer-events-none" />
+            <div className="absolute -bottom-10 -left-10 w-28 h-28 bg-orange-400/20 rounded-full blur-xl pointer-events-none" />
+
+            <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center text-4xl shadow-lg animate-bounce">
+              {levelUpCelebration.newBadge}
+            </div>
+
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-amber-800 bg-amber-100 px-3 py-1 rounded-full">
+                ¡Ascenso Culinario!
+              </span>
+              <h3 className="text-2xl font-black text-stone-900 mt-2 font-serif">
+                ¡Felicidades, Chef!
+              </h3>
+              <p className="text-sm font-bold text-amber-950 mt-1">
+                Has alcanzado el {levelUpCelebration.newTitle}
+              </p>
+              <p className="text-xs text-stone-600 mt-1 max-w-xs mx-auto">
+                Tu práctica en los fuegos ha dado frutos. Tu mentor gastronómico ahora te propondrá desafíos más ricos y técnicas más sabrosas.
+              </p>
+            </div>
+
+            {levelUpCelebration.unlockedTechniques.length > 0 && (
+              <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-200 text-left text-xs space-y-2">
+                <span className="font-bold text-amber-900 block text-[11px] uppercase tracking-wider">
+                  Nuevas técnicas desbloqueadas:
+                </span>
+                <ul className="space-y-1 text-stone-700 text-xs">
+                  {levelUpCelebration.unlockedTechniques.slice(0, 3).map((tech, idx) => (
+                    <li key={idx} className="flex items-center gap-1.5 font-medium">
+                      <span className="text-amber-600 font-bold">✨</span>
+                      <span>{tech}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <button
+              onClick={() => setLevelUpCelebration(null)}
+              className="w-full py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-sm font-bold shadow-md transition cursor-pointer"
+            >
+              ¡A seguir cocinando!
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Emergencias Culinarias S.O.S. */}
       <CookingEmergencyModal
         isOpen={isEmergencyModalOpen}
@@ -1826,6 +3039,88 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           });
         }}
       />
+
+      {/* Modal de Lista de Compras Inteligente y Compartible */}
+      <ShoppingListModal
+        isOpen={isShoppingModalOpen}
+        onClose={() => setIsShoppingModalOpen(false)}
+      />
+
+      {/* Sección FAQ: "Mitos y Miedos del Cocinero Novato" */}
+      <div className="mt-10 bg-white rounded-3xl border border-stone-200 p-6 shadow-sm space-y-4">
+        <div
+          onClick={() => setShowFaqSection(!showFaqSection)}
+          className="flex items-center justify-between cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-900 flex items-center justify-center text-xl font-bold shadow-2xs">
+              💡
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-extrabold text-stone-900 font-serif">
+                  Mitos y Miedos Comunes del Principiante
+                </h3>
+                <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                  FAQ Cero Ansiedad
+                </span>
+              </div>
+              <p className="text-xs text-stone-500">
+                Todo lo que te daba vergüenza preguntar en la cocina explicado con calma y ciencia.
+              </p>
+            </div>
+          </div>
+          <button className="p-2 rounded-xl bg-stone-100 text-stone-600 hover:bg-stone-200 transition">
+            {showFaqSection ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {showFaqSection && (
+          <div className="space-y-3 pt-3 border-t border-stone-100 animate-in fade-in">
+            {NOVICE_FAQS.map((faq) => {
+              const isExpanded = expandedFaqId === faq.id;
+              return (
+                <div
+                  key={faq.id}
+                  className="rounded-2xl border border-stone-200 overflow-hidden transition-all bg-stone-50/50"
+                >
+                  <button
+                    onClick={() => setExpandedFaqId(isExpanded ? null : faq.id)}
+                    className="w-full p-4 text-left flex items-center justify-between gap-3 hover:bg-stone-100/70 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-base shrink-0">{faq.icon}</span>
+                      <span className="text-xs sm:text-sm font-bold text-stone-900">
+                        {faq.question}
+                      </span>
+                    </div>
+                    {isExpanded ? (
+                      <ChevronUp className="w-4 h-4 text-stone-400 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-stone-400 shrink-0" />
+                    )}
+                  </button>
+
+                  {isExpanded && (
+                    <div className="p-4 pt-1 bg-white border-t border-stone-100 space-y-3 text-xs">
+                      <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 text-stone-900 leading-relaxed font-semibold">
+                        {faq.shortAnswer}
+                      </div>
+
+                      <div className="text-stone-700 leading-relaxed bg-stone-50 p-3 rounded-xl border border-stone-200">
+                        <strong className="block text-[11px] uppercase tracking-wide text-stone-500 mb-1">
+                          🔬 Explicación Científica y Solución:
+                        </strong>
+                        <p>{faq.explanation}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

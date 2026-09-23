@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { ChefHat, Mic, BookOpen, MapPin, Award, Flame, Sparkles, Bell, BellRing, Check, VolumeX, Volume2 } from 'lucide-react';
+import { ChefHat, Mic, BookOpen, MapPin, Award, Flame, Sparkles, Bell, BellRing, Check, VolumeX, Volume2, Recycle, ShoppingCart } from 'lucide-react';
 import { UserProfile } from '../types';
 import { getNotificationPermission, requestNotificationPermission, sendTestPushNotification } from '../utils/pushNotifications';
 import { useSilentMode } from '../utils/useSilentMode';
 
-export type ActiveTab = 'cocinar' | 'diccionario' | 'mapa' | 'cuaderno';
+export type ActiveTab = 'cocinar' | 'sobras' | 'diccionario' | 'mapa' | 'cuaderno';
 
 interface NavbarProps {
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
   onOpenVoiceAssistant: () => void;
+  onOpenShoppingList?: () => void;
   userProfile: UserProfile;
 }
 
@@ -17,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   onSelectTab,
   onOpenVoiceAssistant,
+  onOpenShoppingList,
   userProfile,
 }) => {
   const [navPushStatus, setNavPushStatus] = useState<string>('default');
@@ -82,6 +84,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
+              onClick={() => onSelectTab('sobras')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'sobras'
+                  ? 'bg-white text-stone-900 shadow-sm'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              <Recycle className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Rescate de Sobras</span>
+              <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
+                Zero Waste
+              </span>
+            </button>
+
+            <button
               onClick={() => onSelectTab('diccionario')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'diccionario'
@@ -123,6 +140,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Action: Modo Silencioso, Push Alerts & Hablar con el Chef */}
           <div className="flex items-center gap-2">
+            {/* Lista de Compras Modal Trigger */}
+            {onOpenShoppingList && (
+              <button
+                onClick={onOpenShoppingList}
+                className="p-2 sm:px-3 sm:py-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                title="Abrir tu Lista de Compras Inteligente"
+              >
+                <ShoppingCart className="w-4 h-4 text-emerald-600" />
+                <span className="hidden xl:inline text-[11px] font-bold">Súper</span>
+              </button>
+            )}
+
             {/* Modo Silencioso / Subtítulos en Pantalla */}
             <button
               onClick={toggleSilentMode}
@@ -211,6 +240,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Flame className="w-4 h-4" />
             <span>Cocinar</span>
+          </button>
+          <button
+            onClick={() => onSelectTab('sobras')}
+            className={`p-1.5 flex flex-col items-center gap-0.5 font-bold ${
+              activeTab === 'sobras' ? 'text-emerald-600' : 'text-stone-500'
+            }`}
+          >
+            <Recycle className="w-4 h-4" />
+            <span>Sobras</span>
           </button>
           <button
             onClick={() => onSelectTab('diccionario')}

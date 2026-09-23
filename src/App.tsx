@@ -5,6 +5,8 @@ import { CookingMode } from './components/CookingMode';
 import { VisualDictionary } from './components/VisualDictionary';
 import { KitchenStorageMap } from './components/KitchenStorageMap';
 import { ChefNotebook } from './components/ChefNotebook';
+import { LeftoversRescueTab } from './components/LeftoversRescueTab';
+import { ShoppingListModal } from './components/ShoppingListModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AccessibleSubtitles } from './components/AccessibleSubtitles';
@@ -21,6 +23,44 @@ const INITIAL_PROFILE: UserProfile = {
     'Suele usar fuego muy alto al dorar cebolla',
     'Olvida medir los ingredientes antes de encender la hornalla',
   ],
+  masteredSkills: [
+    'Mise en place antes de calentar',
+    'Control de fuego bajo y llama suave',
+  ],
+  flavorPreferences: [
+    'Toques frescos de limón o vinagre suave',
+    'Aromas tostados sin amargor',
+  ],
+  flavorBoostersLearned: [
+    {
+      dish: 'Huevos Revueltos Suaves',
+      tip: 'Unas gotas de limón o vinagre suave al final cortan la grasa y realzan la cremosidad.',
+      category: 'acidez',
+      date: 'Ayer',
+    },
+  ],
+  evolutionaryMemories: [
+    {
+      id: 'mem-1',
+      category: 'fuego',
+      fact: 'Le tiene respeto al aceite caliente; prefiere iniciar con sartén templada y fuego bajo.',
+      learnedAt: 'Día 1',
+    },
+    {
+      id: 'mem-2',
+      category: 'fortaleza',
+      fact: 'Ya domina el Mise en Place (platitos listos antes de prender la hornalla).',
+      learnedAt: 'Ayer',
+    },
+    {
+      id: 'mem-3',
+      category: 'gustos',
+      fact: 'Le gustan los toques cítricos sutiles y las texturas cremosas.',
+      learnedAt: 'Ayer',
+    },
+  ],
+  aiToneSetting: 'mentor_paciencia',
+  complexityLevel: 'basico_guiado',
   cookedHistory: [
     {
       id: 'dish-demo-1',
@@ -30,6 +70,9 @@ const INITIAL_PROFILE: UserProfile = {
       difficultyFaced: 'Saber cuándo apagar la hornalla',
       mentorTip: 'Retirar la sartén cuando todavía se ven brillantes y húmedos fue la clave del éxito.',
       xpEarned: 35,
+      skillImproved: 'Retirada a tiempo con calor residual',
+      flavorBoosterLearned: 'Gotitas de limón al final para balancear la grasa',
+      tastePreferenceDetected: 'Texturas sedosas y toques cítricos',
     },
   ],
   unlockedBadges: [
@@ -63,6 +106,7 @@ const INITIAL_PROFILE: UserProfile = {
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('cocinar');
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const [isShoppingListOpen, setIsShoppingListOpen] = useState(false);
   const [voiceContext, setVoiceContext] = useState<{
     recipeTitle?: string;
     stepNumber?: number;
@@ -87,6 +131,12 @@ export default function App() {
           pastMistakes: Array.isArray(parsed?.pastMistakes) ? parsed.pastMistakes : INITIAL_PROFILE.pastMistakes,
           cookedHistory: Array.isArray(parsed?.cookedHistory) ? parsed.cookedHistory : INITIAL_PROFILE.cookedHistory,
           unlockedBadges: Array.isArray(parsed?.unlockedBadges) ? parsed.unlockedBadges : INITIAL_PROFILE.unlockedBadges,
+          masteredSkills: Array.isArray(parsed?.masteredSkills) ? parsed.masteredSkills : INITIAL_PROFILE.masteredSkills,
+          flavorPreferences: Array.isArray(parsed?.flavorPreferences) ? parsed.flavorPreferences : INITIAL_PROFILE.flavorPreferences,
+          flavorBoostersLearned: Array.isArray(parsed?.flavorBoostersLearned) ? parsed.flavorBoostersLearned : INITIAL_PROFILE.flavorBoostersLearned,
+          evolutionaryMemories: Array.isArray(parsed?.evolutionaryMemories) ? parsed.evolutionaryMemories : INITIAL_PROFILE.evolutionaryMemories,
+          aiToneSetting: parsed?.aiToneSetting || INITIAL_PROFILE.aiToneSetting,
+          complexityLevel: parsed?.complexityLevel || INITIAL_PROFILE.complexityLevel,
         };
       }
     } catch (e) {
@@ -94,6 +144,36 @@ export default function App() {
     }
     return INITIAL_PROFILE;
   });
+
+  const handleLearnFact = (
+    category: 'fuego' | 'gustos' | 'equipamiento' | 'habito' | 'fortaleza',
+    fact: string
+  ) => {
+    setUserProfile((prev) => {
+      const existing = prev.evolutionaryMemories || [];
+      // Evitar duplicados exactos o muy parecidos
+      if (existing.some((m) => m.fact.toLowerCase().trim() === fact.toLowerCase().trim())) {
+        return prev;
+      }
+      const newFact = {
+        id: 'mem-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+        category,
+        fact: fact.trim(),
+        learnedAt: 'Hoy',
+      };
+      return {
+        ...prev,
+        evolutionaryMemories: [newFact, ...existing],
+      };
+    });
+  };
+
+  const handleRemoveFact = (id: string) => {
+    setUserProfile((prev) => ({
+      ...prev,
+      evolutionaryMemories: (prev.evolutionaryMemories || []).filter((m) => m.id !== id),
+    }));
+  };
 
   useEffect(() => {
     try {
@@ -137,6 +217,7 @@ export default function App() {
           setVoiceContext(undefined);
           setIsVoiceOpen(true);
         }}
+        onOpenShoppingList={() => setIsShoppingListOpen(true)}
         userProfile={userProfile}
       />
 
@@ -149,8 +230,11 @@ export default function App() {
             onOpenVoiceAssistantWithContext={handleOpenVoiceWithContext}
             incomingTimer={incomingTimer}
             onClearIncomingTimer={() => setIncomingTimer(null)}
+            onLearnFact={handleLearnFact}
           />
         )}
+
+        {activeTab === 'sobras' && <LeftoversRescueTab />}
 
         {activeTab === 'diccionario' && <VisualDictionary />}
 
@@ -160,6 +244,8 @@ export default function App() {
           <ChefNotebook
             userProfile={userProfile}
             onUpdateProfile={handleUpdateProfile}
+            onLearnFact={handleLearnFact}
+            onRemoveFact={handleRemoveFact}
           />
         )}
       </main>
@@ -192,13 +278,21 @@ export default function App() {
         </button>
       </aside>
 
-      {/* Hands-Free Voice Assistant Modal */}
+      {/* Hands-Free Voice Assistant Modal con Modo Conversacional Continuo y Memoria */}
       <VoiceAssistantModal
         isOpen={isVoiceOpen}
         onClose={() => setIsVoiceOpen(false)}
         userProfile={userProfile}
         currentContext={voiceContext}
         onAddTimer={handleVoiceAddTimer}
+        onLearnFact={handleLearnFact}
+        onRemoveFact={handleRemoveFact}
+      />
+
+      {/* Smart Shopping List Modal (Compartir vía WhatsApp o copiar) */}
+      <ShoppingListModal
+        isOpen={isShoppingListOpen}
+        onClose={() => setIsShoppingListOpen(false)}
       />
 
       {/* Indicador de Estado Sin Conexión (Caché Offline activa) */}

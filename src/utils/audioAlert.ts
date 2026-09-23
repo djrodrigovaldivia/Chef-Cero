@@ -236,6 +236,104 @@ export function playEmergencyAlertSound() {
 // Natural Spanish Speech Synthesis con soporte automático para Subtítulos Accesibles
 let currentUtterance: SpeechSynthesisUtterance | null = null;
 
+// Helper para limpiar y normalizar fonéticamente el texto para una pronunciación perfecta en español
+export function normalizeTextForSpeech(raw: string): string {
+  if (!raw) return '';
+
+  let t = raw
+    // Quitar markdown
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/#{1,6}\s?/g, '')
+    .replace(/`[^`]*`/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Quitar emojis y símbolos especiales que los motores de voz leen feo
+    .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
+    .replace(/[\u{2600}-\u{26FF}]/gu, '')
+    .replace(/[\u{2700}-\u{27BF}]/gu, '')
+    .replace(/[•·—–]/g, ' ')
+    // Normalizar abreviaturas culinarias comunes para pronunciación natural
+    .replace(/\b1\/2\b/g, 'medio')
+    .replace(/\b1\/4\b/g, 'un cuarto')
+    .replace(/\b3\/4\b/g, 'tres cuartos')
+    .replace(/\bcdas\b/gi, 'cucharadas')
+    .replace(/\bcda\b/gi, 'cucharada')
+    .replace(/\bcdtas\b/gi, 'cucharaditas')
+    .replace(/\bcdta\b/gi, 'cucharadita')
+    .replace(/\baprox\.?\b/gi, 'aproximadamente')
+    .replace(/\btemp\.?\b/gi, 'temperatura')
+    .replace(/\bkg\b/gi, 'kilos')
+    .replace(/\bgrs?\b/gi, 'gramos')
+    .replace(/\bml\b/gi, 'mililitros')
+    .replace(/(\d+)\s*mins?\b/gi, '$1 minutos')
+    .replace(/(\d+)\s*segs?\b/gi, '$1 segundos')
+    .replace(/\bS\.O\.S\.\b/gi, 'emergencia')
+    // Limpieza de espacios dobles
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return t;
+}
+
+// Helper para seleccionar la mejor voz en español latinoamericano disponible
+function getBestLatinAmericanVoice(): SpeechSynthesisVoice | null {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return null;
+
+  // 1. Preferencia absoluta: Voces Neuronales/Naturales en español latinoamericano
+  const premiumKeywords = [
+    'natural',
+    'online (natural)',
+    'sabina',
+    'raul',
+    'raúl',
+    'dalia',
+    'jorge',
+    'paulina',
+    'diego',
+    'sofia',
+    'sofía',
+    'google español',
+    'mexic',
+    'estados unidos',
+    'latin',
+  ];
+
+  for (const kw of premiumKeywords) {
+    const match = voices.find((v) => {
+      const isSpanish = (v.lang && v.lang.toLowerCase().startsWith('es')) || v.name.toLowerCase().includes('spanish');
+      if (!isSpanish) return false;
+      return v.name.toLowerCase().includes(kw);
+    });
+    if (match) return match;
+  }
+
+  // 2. Locales explícitos de Latinoamérica (es-419, es-MX, es-US, es-CO, es-CL, es-AR, etc.)
+  const latinLocales = ['es-419', 'es-mx', 'es-us', 'es-co', 'es-cl', 'es-ar', 'es-pe'];
+  for (const loc of latinLocales) {
+    const match = voices.find((v) => v.lang && v.lang.toLowerCase() === loc);
+    if (match) return match;
+  }
+
+  // 3. Fallback: cualquier voz que empiece por es- (excluyendo es-ES si hay otra disponible)
+  const nonSpainSpanish = voices.find(
+    (v) => v.lang && v.lang.toLowerCase().startsWith('es') && !v.lang.toLowerCase().includes('es-es')
+  );
+  if (nonSpainSpanish) return nonSpainSpanish;
+
+  // 4. Último recurso: cualquier voz en español
+  return voices.find((v) => v.lang && v.lang.toLowerCase().startsWith('es')) || null;
+}
+
+// Inicializar escucha de carga diferida de voces en navegadores (Chromium / Safari)
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    // Voces precargadas en memoria
+    getBestLatinAmericanVoice();
+  };
+}
+
 export interface SpeakOptions {
   speaker?: string;
   badge?: string;
@@ -261,17 +359,11 @@ export function speakSpanishText(
     if (onEndOrOptions.isEmergency) isEmergency = onEndOrOptions.isEmergency;
   }
 
-  // Limpiar caracteres de formato markdown
-  const cleanText = text
-    .replace(/\*\*/g, '')
-    .replace(/\*/g, '')
-    .replace(/#{1,6}\s?/g, '')
-    .replace(/`[^`]*`/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .trim();
+  // Limpiar y normalizar fonéticamente el texto para dicción perfecta
+  const cleanText = normalizeTextForSpeech(text);
 
-  // Calcular tiempo de lectura accesible en base a la longitud (~180 palabras por minuto, mín 5.5 seg)
-  const estimatedReadingMs = Math.max(5500, Math.min(20000, cleanText.length * 70));
+  // Calcular tiempo de lectura accesible en base a la longitud (~160 palabras por minuto, mín 5.5 seg)
+  const estimatedReadingMs = Math.max(5500, Math.min(22000, cleanText.length * 75));
 
   // Generar subtítulo visible en pantalla SIEMPRE (tanto si hay sonido como si está en modo silencioso)
   emitSubtitle({
@@ -313,24 +405,15 @@ export function speakSpanishText(
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'es-ES';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.05;
+    const latinVoice = getBestLatinAmericanVoice();
 
-    // Buscar una voz en español clara
-    const voices = window.speechSynthesis.getVoices();
-    const spanishVoice = voices.find(
-      (v) =>
-        (v.lang.startsWith('es') || v.lang.includes('Spanish')) &&
-        (v.name.includes('Natural') ||
-          v.name.includes('Google') ||
-          v.name.includes('Monica') ||
-          v.name.includes('Jorge') ||
-          v.name.includes('Helena'))
-    ) || voices.find((v) => v.lang.startsWith('es'));
+    // Configuración optimizada para español latinoamericano: cadencia calmada, dicción nítida
+    utterance.lang = latinVoice?.lang || 'es-419';
+    utterance.rate = 0.94; // Cadencia óptima para máxima inteligibilidad en cocina
+    utterance.pitch = 1.02; // Tono cálido, empático y natural
 
-    if (spanishVoice) {
-      utterance.voice = spanishVoice;
+    if (latinVoice) {
+      utterance.voice = latinVoice;
     }
 
     const cleanupAndFinish = () => {

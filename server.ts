@@ -117,6 +117,45 @@ function safeParseGeminiJson<T>(rawText: string | undefined | null, fallback: T)
   }
 }
 
+// Resilient helper that handles model overload (503 / 429 / spikes) with model fallback
+async function callGeminiWithFallback(ai: GoogleGenAI, request: {
+  contents: any;
+  config?: any;
+}) {
+  const models = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  let lastError: any = null;
+
+  for (const model of models) {
+    try {
+      const response = await ai.models.generateContent({
+        ...request,
+        model,
+      });
+      return response;
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = String(err?.message || err);
+      console.warn(`Chef Cero: Modelo ${model} no disponible o sobrecargado (${errMsg.slice(0, 110)}). Evaluando respaldo...`);
+      // Si el error es de sintaxis o schema fatal no reintentar a ciegas, pero para 503/429/high demand/unavailable sí
+      const isTransient =
+        errMsg.includes('503') ||
+        errMsg.includes('UNAVAILABLE') ||
+        errMsg.includes('high demand') ||
+        errMsg.includes('overloaded') ||
+        errMsg.includes('RESOURCE_EXHAUSTED') ||
+        errMsg.includes('429');
+
+      if (!isTransient && !errMsg.includes('not found') && !errMsg.includes('temporarily')) {
+        throw err;
+      }
+      // Breve pausa para amortiguar picos de demanda
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+  }
+
+  throw lastError;
+}
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -290,8 +329,74 @@ app.post('/api/notifications/test', async (req, res) => {
 
 // 1. Hands-free cooking voice & chat assistant
 app.post('/api/chat', async (req, res) => {
+  // Helper de respaldo dinámico en español latinoamericano (para cuando no hay API key o hay fallo de red)
+  const generateDynamicFallback = (rawText: string) => {
+    const q = rawText.toLowerCase();
+    let reply = '';
+    let safetyAlert: string | null = null;
+    let timerSecondsRequested = 0;
+    let timerLabel = '';
+    let heatAdjustment = 'mantener';
+
+    if (q.includes('aceite') && (q.includes('humo') || q.includes('fuego') || q.includes('quema') || q.includes('salpica'))) {
+      reply = '¡RETIRA LA SARTÉN DEL FUEGO INMEDIATAMENTE hacia una hornilla apagada! Nunca le eches agua al aceite caliente porque salpicará violentamente. Tápala con una tapa metálica para ahogar el calor y déjala enfriar en paz.';
+      safetyAlert = '¡ALERTA DE FUEGO! Retira la sartén del calor de inmediato. NUNCA uses agua.';
+      heatAdjustment = 'apagar';
+    } else if (q.includes('minuto') || q.includes('tiempo') || q.includes('temporizador') || q.includes('alarma')) {
+      const match = q.match(/\b(\d+)\b/);
+      const minutes = match ? parseInt(match[1], 10) : 5;
+      timerSecondsRequested = minutes * 60;
+      timerLabel = `Tiempo ${minutes} min`;
+      const timerResponses = [
+        `¡Listo! Ya activé tu temporizador de ${minutes} minutos. Mantén la hornilla a fuego moderado y yo te aviso cuando esté a punto.`,
+        `Temporizador de ${minutes} minutos corriendo. Aprovecha para ordenar tu mesa o vigilar que el líquido no hierva a borbotones.`,
+        `He puesto la cuenta regresiva de ${minutes} minutos. Si sientes que empieza a dorar muy rápido, baja la flama un punto.`,
+      ];
+      reply = timerResponses[Math.floor(Math.random() * timerResponses.length)];
+    } else if (q.includes('arroz')) {
+      const riceTips = [
+        'Para que el arroz te quede bien desgranado: la proporción clásica es 1 taza de arroz por 2 de agua caliente. Cuando empiece a hervir, baja el fuego al mínimo, tápalo bien y déjalo 20 minutos sin destapar ni revolver.',
+        'Si el arroz se te está pegando o quemando en el fondo, apaga el fuego de inmediato, retira la olla y déjala tapada sobre una superficie fría 5 minutos. El vapor residual soltará el grano sin sabor a quemado.',
+        'Si sientes que el arroz quedó un poquito duro y ya no hay agua, agrega 3 a 4 cucharadas de agua hirviendo por los bordes, tapa bien y déjalo a fuego mínimo otros 3 minutos.',
+      ];
+      reply = riceTips[Math.floor(Math.random() * riceTips.length)];
+    } else if (q.includes('pasta') || q.includes('fideo') || q.includes('tallarines')) {
+      reply = 'Pon el agua a hervir a borbotones con buena sal antes de echar la pasta. No le eches aceite al agua porque la salsa resbalará después. Y un truco clave: guarda media taza del agua de cocción antes de colar para mezclarla con la salsa y que quede cremosa.';
+    } else if (q.includes('pollo') || q.includes('carne')) {
+      reply = 'Para saber si el pollo está cocido por dentro sin cortarlo todo: pincha la parte más gruesa con un tenedor o cuchillo. El jugo que brota debe ser completamente transparente. Si sale rosado, baja el fuego a medio-bajo, tapa la sartén y dale 3 a 5 minutos más.';
+    } else if (q.includes('salado') || q.includes('sal')) {
+      reply = 'Si te quedó un poco salado: agrega unas gotas de jugo de limón fresco o una cucharadita de vinagre suave; la acidez engaña al paladar y equilibra la sal. Si es un guiso o sopa, echa una papa pelada cortada en cuartos para que absorba el exceso.';
+    } else if (q.includes('cebolla') || q.includes('sofrito')) {
+      reply = 'El secreto de un sofrito dulce y suave es la paciencia: cocina la cebolla a fuego muy bajo con una pizca de sal durante unos 8 a 10 minutos. Debe ponerse transparente y tierna, nunca café oscuro de golpe porque amarga.';
+    } else if (q.includes('ajo')) {
+      reply = '¡Ojo con el ajo! Se quema en apenas 20 segundos a fuego fuerte y se vuelve amargo. Agrégalo siempre cuando la cebolla ya esté tierna y con el fuego medio o bajo, revolviendo constantemente.';
+    } else if (q.includes('huevo') || q.includes('omelette')) {
+      reply = 'Para unos huevos revueltos cremosos de restaurante: cocínalos a fuego bien bajito con una nuez de mantequilla o chorrito de aceite, revolviendo suavemente con cuchara de madera. Apaga la estufa cuando todavía se vean húmedos y brillantes.';
+    } else if (q.includes('sartén') || q.includes('pega') || q.includes('pego')) {
+      reply = 'Si la comida se pegó al fondo de la sartén: baja el fuego a mínimo, echa dos cucharadas de agua caliente o caldo y raspa suavemente con espátula de madera. Ese fondo dorado se llama desglasado y tiene muchísimo sabor concentrado.';
+    } else if (q.includes('fuego') || q.includes('llama') || q.includes('calor')) {
+      reply = 'Como regla general: ante cualquier duda o apuro, baja la llama al mínimo. El fuego bajo te da tiempo para pensar, mirar y oler sin riesgo de que se te queme nada.';
+    } else {
+      const generalLatinAdvice = [
+        'Dime exactamente qué ingrediente tienes en la sartén o qué estás notando (olor, color o sonido), y te guío paso a paso.',
+        'Aquí estoy contigo. Recuerda: cocinar no es correr, es prestar atención a los aromas y controlar la llama. ¿Qué duda tienes en este momento?',
+        'Cuéntame en qué paso de la receta estás o si quieres saber cómo sustituir algún ingrediente con lo que tengas en tu alacena.',
+        'Tranquilo, todo tiene solución en la cocina. ¿Ves mucho hervor, notas que le falta cocción o quieres medir algún condimento?',
+      ];
+      reply = generalLatinAdvice[Math.floor(Math.random() * generalLatinAdvice.length)];
+    }
+
+    return {
+      reply,
+      safetyAlert,
+      timerSecondsRequested,
+      timerLabel,
+      heatAdjustment,
+    };
+  };
+
   try {
-    const { message, userProfile, currentContext } = req.body;
+    const { message, userProfile, currentContext, history } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'Mensaje requerido' });
     }
@@ -300,55 +405,79 @@ app.post('/api/chat', async (req, res) => {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      return res.json({
-        reply: `¡Hola! Como tu Chef Mentor de Chef Cero: ${message.includes('aceite') ? '¡Cuidado! Si el aceite humea, retira la sartén del fuego de inmediato hacia una hornalla apagada. Nunca eches agua.' : 'Mantén la calma. Baja el fuego al mínimo y dime exactamente qué estás viendo en la sartén.'}`,
-        safetyAlert: message.toLowerCase().includes('humo') || message.toLowerCase().includes('quema') ? 'Peligro de quemado: aparta la olla del calor.' : null,
-        suggestedAction: 'Bajar fuego a mínimo',
-      });
+      return res.json(generateDynamicFallback(message));
     }
 
     const userMistakes = userProfile?.pastMistakes?.length
       ? userProfile.pastMistakes.join(', ')
       : 'Novato sin historial previo';
     const userLevel = userProfile?.levelTitle || 'Nivel 1: Principiante Total';
+    const userMemories = Array.isArray(userProfile?.evolutionaryMemories) && userProfile.evolutionaryMemories.length > 0
+      ? userProfile.evolutionaryMemories.map((m: any) => `• [${m.category || 'general'}]: ${m.fact}`).join('\n')
+      : 'El aprendiz recién está comenzando. Aún no tienes memorias previas registradas.';
 
-    const systemInstruction = `Eres "Chef Cero", un mentor culinario de voz cálido, paciente, pedagógico y calmado en español.
-Tu usuario NO SABE ABSOLUTAMENTE NADA de cocina. No uses términos técnicos sin explicarlos.
-Tu máxima prioridad es la SEGURIDAD personal y evitar que se queme la comida o la sartén.
+    const systemInstruction = `Eres "Chef Cero", un mentor culinario de voz cálido, paciente, pedagógico y cercano.
+IDIOMA Y TONO:
+- Habla SIEMPRE en ESPAÑOL LATINOAMERICANO neutro y claro (usa vocabulario común en Latinoamérica: 'estufa/hornilla', 'sartén', 'fuego bajo/medio/alto', 'revolver', 'picar', 'probar', 'alacena/despensa').
+- NUNCA uses modismos peninsulares de España como 'vosotros', 'fogón', 'sois', ni tecnicismos culinarios franceses sin explicarlos de forma cotidiana.
+- Sé ULTRA CONVERSACIONAL, dinámico y empático. Conversa como un amigo chef que está de pie junto al usuario en la mesada de la cocina.
+- NUNCA comiences todas las respuestas con frases cliché como "Respira hondo" o "¡Hola!". Varía tus respuestas naturalmente.
+- Tu máxima prioridad es la SEGURIDAD personal y evitar que se queme la comida o la sartén.
 
-REGLAS DE ORO CULTURALES UNIVERSALES PARA PRINCIPIANTES:
-- Comida Chilena & Criolla: El sofrito de cebolla se suda a fuego muy lento con calma (10 min) para que quede dulce y no dé ardor ("no repita"); comino y ají de color en pizca justa; el choclo y la papa dan consistencia barata y rica.
-- Comida Mexicana: Dorar chiles secos toma solo 20 segundos por lado; si se queman amargan toda la salsa. Las tortillas se doran con poco aceite para evitar salpicaduras; limón y cilantro aportan balance fresco.
-- Comida Asiática (China, Tailandesa, Japonesa): El arroz frito SIEMPRE debe ser arroz frío del día anterior para que no se apelmace; el ajo y jengibre rallados se queman en 5 segundos en fuego alto, agrégalos con el fuego medio o con la salsa; saltea en tandas. Sustituye mirin con vinagre de manzana + azúcar; salsa de pescado con soya + limón.
-- Comida Italiana: Salar el agua de pasta como agua de mar; reservar siempre 1 taza del agua con almidón para emulsionar la salsa (mantecatura); el ajo se confita a fuego mínimo sin que pase de rubio pálido.
-- Comida Española: Las patatas de la tortilla se pochan tiernas en aceite medio-bajo, nunca fritas crujientes; voltear la tortilla con plato llano más grande que la sartén sin titubeos.
-- Comida Francesa: Mantequilla a fuego dulce espumosa sin que se queme; un omelette es suave, sin costra marrón y jugoso al centro.
-- FILOSOFÍA ECONÓMICA BBB (Buena, Bonita y Barata): Prioriza ingredientes económicos y versátiles (huevos, papas, arroz, legumbres, cebolla, fideos) y ofrece sustitutos de despensa para que el usuario no gaste de más.
+MEMORIA EVOLUTIVA DEL ESTUDIANTE (Lo que sabes de él):
+${userMemories}
+
+REGLA DE CONEXIÓN PERSONAL Y APRENDIZAJE:
+- Si aplica al tema actual, cita con naturalidad y cariño lo que recuerdas de él (ej: "Como ya sé que le tienes respeto al aceite caliente...", "Recuerda que en tu sartén antiadherente no necesitas tanto aceite", "Como la otra vez dominaste el arroz...").
+- Si el usuario te cuenta un gusto, una limitación (ej: "no tengo batidora", "no como cebolla cruda", "se me quemó la carne", "me da miedo prender el fósforo"), detecta ese hecho y devuélvelo en 'learnedMemory' para almacenarlo en su memoria permanente.
+
+REGLAS DE ORO CULTURALES LATINOAMERICANAS Y UNIVERSALES:
+- Sofrito Criollo / Latino: La cebolla se suda a fuego muy lento (8 a 10 min) con calma para que quede dulce, transparente y no caiga pesada.
+- Arroz casero: Proporción 1 a 2; fuego mínimo tapado 20 minutos; no destapar a cada rato.
+- Ajo: Se quema en 15 segundos en fuego alto; agrégalo a fuego medio-bajo cuando la cebolla ya esté tierna.
+- Pollo/Carne: Se sella con fuego medio-alto y luego se cocina con calma para que no quede seco ni crudo adentro.
+- Sal y balance: El toque final de unas gotas de limón o vinagre corta la grasa y realza todos los sabores.
 
 Perfil del estudiante:
 - Nivel actual: ${userLevel}
-- Errores típicos y tendencias previas registradas: ${userMistakes}
+- Errores típicos previos: ${userMistakes}
 - Contexto de cocina actual: ${currentContext ? JSON.stringify(currentContext) : 'En cocina libre o consultando'}
 
-Instrucciones para tus respuestas:
-1. Sé conciso y directo (el usuario está cocinando con las manos ocupadas o escuchando por voz). Máximo 2 a 4 oraciones claras.
-2. Si menciona humo, aceite que chisporrotea, fuego alto o comida que se quema, da la instrucción de seguridad PRIMERO en mayúsculas amables (ej. "¡RETIRA LA SARTÉN DEL FUEGO AHORA MISMO!").
-3. Si el usuario pide un temporizador (ej. "pon 8 minutos"), indícalo claramente con los segundos para que la app pueda activarlo.
-4. Si pregunta por secretos de comida chilena, mexicana, asiática, etc., dale la regla de oro cultural sin vueltas técnicas.
-5. Toma en cuenta sus errores pasados (por ejemplo, si suele quemar el ajo, recuérdale con cariño que vigile el dorado).`;
+Instrucciones para la respuesta JSON:
+1. Máximo 2 a 4 oraciones claras y directas para ser escuchadas por audio mientras se cocina.
+2. Si hay peligro de fuego, humo o aceite caliente, pon la instrucción de seguridad PRIMERO en mayúsculas amables (ej: "¡RETIRA LA SARTÉN DEL FUEGO DE INMEDIATO!").
+3. Si el usuario pide un temporizador (ej: "pon 5 minutos"), incluye timerSecondsRequested con los segundos (ej: 300) y timerLabel.
+4. Si detectas un hecho nuevo que valga la pena recordar para el futuro del usuario, llena 'learnedMemory'.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: message,
+    // Armar historial multi-turno si viene en la petición para evitar repeticiones
+    const contents: any[] = [];
+    if (Array.isArray(history) && history.length > 0) {
+      for (const h of history.slice(-6)) {
+        if (h.text && typeof h.text === 'string') {
+          contents.push({
+            role: h.sender === 'chef' ? 'model' : 'user',
+            parts: [{ text: h.text }],
+          });
+        }
+      }
+    }
+    contents.push({
+      role: 'user',
+      parts: [{ text: message }],
+    });
+
+    const response = await callGeminiWithFallback(ai, {
+      contents,
       config: {
         systemInstruction,
+        temperature: 0.7, // Variabilidad y frescura en las respuestas
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             reply: {
               type: Type.STRING,
-              description: 'Respuesta hablada calmada, clara y directa para el usuario.',
+              description: 'Respuesta hablada calmada, clara, variada y directa en español latinoamericano.',
             },
             safetyAlert: {
               type: Type.STRING,
@@ -360,11 +489,25 @@ Instrucciones para tus respuestas:
             },
             timerLabel: {
               type: Type.STRING,
-              description: 'Etiqueta breve para el temporizador, ej: Fideos o Cocción.',
+              description: 'Etiqueta breve para el temporizador, ej: Pasta o Cocción.',
             },
             heatAdjustment: {
               type: Type.STRING,
               description: 'Ajuste de llama sugerido: bajo, medio, alto, apagar, o mantener.',
+            },
+            learnedMemory: {
+              type: Type.OBJECT,
+              description: 'Dato relevante nuevo descubierto sobre el usuario en esta interacción, o null si no se aprendió nada nuevo.',
+              properties: {
+                category: {
+                  type: Type.STRING,
+                  description: 'Categoría: fuego, gustos, equipamiento, habito o fortaleza',
+                },
+                fact: {
+                  type: Type.STRING,
+                  description: 'Hecho aprendido en una sola oración, ej: "Prefiere cocinar con poca sal" o "Solo tiene una sartén de teflón"',
+                },
+              },
             },
           },
           required: ['reply'],
@@ -379,35 +522,8 @@ Instrucciones para tus respuestas:
     return res.json(parsed);
   } catch (error: any) {
     console.warn('Gemini chat fallback engaged:', error?.message);
-    const msg = (req.body?.message || '').toLowerCase();
-    const isOilSmoke = msg.includes('aceite') || msg.includes('humo') || msg.includes('quema');
-    const isTimer = msg.includes('minuto') || msg.includes('tiempo') || msg.includes('temporizador');
-
-    let reply = 'Respira hondo y mantén la calma. Si sientes olor a quemado o ves humo, retira la sartén hacia una hornalla apagada ahora mismo. Cuéntame qué estás cocinando.';
-    let safetyAlert = null;
-    let timerSecondsRequested = 0;
-    let timerLabel = '';
-
-    if (isOilSmoke) {
-      reply = '¡RETIRA LA SARTÉN DEL FUEGO DE INMEDIATO! Apaga la hornalla. NUNCA le eches agua al aceite caliente. Tapa la sartén con una tapa metálica si es necesario y déjala enfriar.';
-      safetyAlert = '¡PELIGRO DE FUEGO! Retira la sartén del calor inmediatamente.';
-    } else if (msg.includes('pollo')) {
-      reply = 'Para saber si el pollo está cocido sin termómetro: pincha la parte más gruesa con un cuchillo o tenedor. El jugo que sale debe ser completamente transparente. Si sale rosado o rojizo, le falta fuego bajo tapado por unos minutos más.';
-    } else if (isTimer) {
-      const match = msg.match(/\b(\d+)\b/);
-      const minutes = match ? parseInt(match[1], 10) : 5;
-      timerSecondsRequested = minutes * 60;
-      timerLabel = `Cocción ${minutes} min`;
-      reply = `He activado tu temporizador de ${minutes} minutos. Puedes relajarte mientras cuidas el fuego a intensidad moderada.`;
-    }
-
-    return res.json({
-      reply,
-      safetyAlert,
-      timerSecondsRequested,
-      timerLabel,
-      heatAdjustment: isOilSmoke ? 'apagar' : 'bajo',
-    });
+    const msg = req.body?.message || '';
+    return res.json(generateDynamicFallback(msg));
   }
 });
 
@@ -495,10 +611,33 @@ app.post('/api/recipe/generate', async (req, res) => {
       ? cuisineDirectives[cuisine]
       : 'Cualquier cocina adaptada a principiantes con técnicas sencillas.';
 
-    const prompt = `Crea una receta a prueba de novatos absolutos con estos ingredientes: "${ingredients || 'huevos, cebolla, pan'}".
+    const userLevel = Number(userProfile?.level) || 1;
+    let levelPedagogicalRule = '';
+    if (userLevel === 1) {
+      levelPedagogicalRule = `ADAPTACIÓN ESTRICTA A NIVEL 1 (CERO ABSOLUTO):
+- El usuario NO SABE COCINAR y le tiene miedo a la estufa, a salpicarse o a que se le queme la comida.
+- La receta DEBE usar 1 sola hornalla/sartén, fuego bajo o medio, máximo 3 o 4 pasos sencillos.
+- Cero términos franceses o jerga culinaria sin explicar.
+- Énfasis total en seguridad y en preparar todo con fuego apagado antes de calentar nada.`;
+    } else if (userLevel === 2) {
+      levelPedagogicalRule = `ADAPTACIÓN A NIVEL 2 (APRENDIZ DEL FUEGO):
+- El usuario ya sabe hervir y freír algo básico sin pánico.
+- Introduce control térmico: sudar cebolla despacio para dulzor (8 min), momento exacto para no quemar el ajo, o sellado jugoso de carne sin resecar.`;
+    } else if (userLevel === 3) {
+      levelPedagogicalRule = `ADAPTACIÓN A NIVEL 3 (COCINERO CASERO SEGURO):
+- El usuario maneja tiempos con soltura.
+- Puede manejar dos hornallas simultáneas, salteados vivos estilo oriental o emulsiones con agua de pasta.`;
+    } else {
+      levelPedagogicalRule = `ADAPTACIÓN A NIVEL 4/5 (ALQUIMISTA / CHEF):
+- Desafíos culinarios: desglasado de sartenes con líquido, reducciones sedosas, y equilibrio sensorial de los 5 sabores.`;
+    }
+
+    const prompt = `Crea una receta adaptada al NIVEL CULINARIO del usuario con estos ingredientes: "${ingredients || 'huevos, cebolla, pan'}".
 Perfil del aprendiz:
-- Nivel: ${userProfile?.levelTitle || 'Principiante'}
+- Nivel Culinario Actual: Nivel ${userLevel} (${userProfile?.levelTitle || 'Cero Absoluto'})
+${levelPedagogicalRule}
 - Errores pasados que comete: ${userProfile?.pastMistakes?.join(', ') || 'Ninguno registrado'}
+- Habilidades dominadas: ${userProfile?.masteredSkills?.join(', ') || 'Mise en place básica'}
 Comida objetivo: ${targetMeal || 'Almuerzo o cena fácil'}.
 Estilo Culinario Solicitado: ${requestedCuisineNote}
 ${budgetFocus ? 'ENFOQUE ECONÓMICO ACTIVO: Diseña el plato para que sea ultra accesible (BBB: Buena, Bonita y Barata) usando alimentos rendidores.' : ''}
@@ -506,13 +645,14 @@ ${budgetFocus ? 'ENFOQUE ECONÓMICO ACTIVO: Diseña el plato para que sea ultra 
 REGLAS CRÍTICAS PARA CHEF CERO:
 1. "Mise en place": Lista obligatoria de todo lo que debe estar lavado, pelado, medido y en pocillos ANTES de encender el fuego.
 2. Cada paso debe tener su nivel de fuego explícito ('bajo', 'medio', 'alto', 'apagado') y temporizadores precisos en segundos si requiere tiempo.
-3. Incluye pistas sensoriales en cada paso (vista/sight, oído/sound, olfato/smell) para que el novato sepa si va bien.
+3. Incluye pistas sensoriales en cada paso (vista/sight, oído/sound, olfato/smell) para que el aprendiz sepa si va bien sin termómetros.
 4. "culturalSecret": Incluye el secreto de oro de esa cultura explicado en 1-2 oraciones amables.
-5. "pantrySubstitutes": Lista de 1 a 3 sustitutos baratos de alacena para que el usuario no tenga que gastar de más.
-6. Incluye alertas de seguridad hiper-específicas para principiantes.`;
+5. "pantrySubstitutes": Lista de 1 a 3 sustitutos baratos de alacena para no gastar de más.
+6. "requiredLevel": El nivel culinario que amerita esta preparación (1 a 5).
+7. "learningGoal": Una frase corta indicando qué técnica clave desbloquea o practica el usuario al hacer este plato.
+8. Alertas de seguridad hiper-específicas para principiantes.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await callGeminiWithFallback(ai, {
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -524,6 +664,8 @@ REGLAS CRÍTICAS PARA CHEF CERO:
             servings: { type: Type.INTEGER },
             totalTimeMinutes: { type: Type.INTEGER },
             difficulty: { type: Type.STRING },
+            requiredLevel: { type: Type.INTEGER },
+            learningGoal: { type: Type.STRING },
             cuisine: { type: Type.STRING },
             cuisineName: { type: Type.STRING },
             countryFlag: { type: Type.STRING },
@@ -705,22 +847,31 @@ app.post('/api/eval', async (req, res) => {
         detectedMistake: rating === 'Se quemó' ? 'Fuego demasiado alto o descuido del tiempo' : rating === 'Salado' ? 'Exceso de sal al condimentar' : null,
         personalizedAdvice: 'La próxima vez mantén el fuego un punto más bajo y prueba la comida con una cuchara limpia antes de apagar.',
         xpAwarded: 50,
+        skillImproved: 'Control de calor y seguridad en sartenes',
+        flavorBoosterLearned: 'Unas gotas de limón o vinagre al final refrescan el plato y cortan cualquier exceso graso.',
+        tastePreferenceDetected: 'Gusto por platos reconfortantes y balanceados.',
+        toneEvolutionComment: 'Continúa sumando experiencia; cada receta forja tu intuición culinaria.',
       });
     }
 
-    const prompt = `Evalúa el desempeño de un novato cocinando "${recipeTitle}".
+    const prompt = `Evalúa el desempeño de un estudiante de cocina que preparó "${recipeTitle}".
 Resultado del plato según el usuario: "${rating}" (ej: En su punto, Salado, Seco, Se quemó, Crudo adentro, Le faltó sabor).
 Mayor dificultad que enfrentó: "${difficultyEncountered}".
 Historial previo de errores del usuario: ${userProfile?.pastMistakes?.join(', ') || 'Ninguno'}.
+Habilidades ya dominadas: ${userProfile?.masteredSkills?.join(', ') || 'Mise en place básica'}.
+Nivel actual: ${userProfile?.levelTitle || 'Principiante'}.
 
 Genera:
-1. Una nota de mentor cariñosa, muy motivadora y educativa.
+1. Una nota de mentor cálida, muy motivadora y educativa.
 2. Si hubo un error técnico, resúmelo en una frase corta para su "Cuaderno de Chef" (ej: "Usa fuego muy alto para dorar", "Se apresura al salar").
 3. Un consejo práctico accionable para su próxima receta.
-4. XP a otorgar (entre 30 y 80 XP).`;
+4. XP a otorgar (entre 30 y 80 XP).
+5. "skillImproved": una micro-técnica concreta que mejoró o practicó hoy (ej: "Control de llama baja", "Pochado suave de verduras", "Sudar cebolla con paciencia").
+6. "flavorBoosterLearned": un secreto culinario o toque de sabor ("flavor booster") aplicable a este tipo de plato (ej: "Un toque de ralladura de cítrico o vinagre suave al retirar del fuego para realzar los aromas").
+7. "tastePreferenceDetected": preferencia de paladar detectada según la preparación y el resultado.
+8. "toneEvolutionComment": una breve frase indicando cómo evoluciona su relación con el mentor conforme gana confianza.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await callGeminiWithFallback(ai, {
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -731,8 +882,12 @@ Genera:
             detectedMistake: { type: Type.STRING },
             personalizedAdvice: { type: Type.STRING },
             xpAwarded: { type: Type.INTEGER },
+            skillImproved: { type: Type.STRING },
+            flavorBoosterLearned: { type: Type.STRING },
+            tastePreferenceDetected: { type: Type.STRING },
+            toneEvolutionComment: { type: Type.STRING },
           },
-          required: ['mentorNote', 'personalizedAdvice', 'xpAwarded'],
+          required: ['mentorNote', 'personalizedAdvice', 'xpAwarded', 'skillImproved', 'flavorBoosterLearned'],
         },
       },
     });
@@ -748,15 +903,25 @@ Genera:
     const rat = req.body?.rating || 'Bien';
     let mistake = null;
     let advice = 'Recuerda que bajar el fuego a mínimo a tiempo te da margen de maniobra.';
+    let skill = 'Manejo del calor y atención a los sentidos';
+    let booster = 'Un chorrito de limón o aceite de oliva crudo al servir despierta cualquier preparación simple.';
+    let preference = 'Perfil equilibrado y hogareño';
+
     if (rat === 'Se quemó') {
       mistake = 'Fuego demasiado alto al dorar o sofreír';
       advice = 'La próxima vez mantén la llama baja y nunca te alejes de la sartén mientras esté al fuego.';
+      skill = 'Alerta de fuego y retirada rápida al calor residual';
     } else if (rat === 'Salado') {
       mistake = 'Exceso de sal al condimentar de golpe';
       advice = 'Añade la sal en pequeñas pizcas con los dedos y prueba antes de servir.';
+      skill = 'Medición de condimentos al tanteo seguro';
     } else if (rat === 'Crudo adentro') {
       mistake = 'Fuego muy alto que doró por fuera antes de cocinar por dentro';
       advice = 'Baja el fuego a medio-bajo y tapa la sartén para que el calor cocine el centro suavemente.';
+      skill = 'Cocción con calor envolvente tapado';
+    } else {
+      skill = 'Punto de cocción controlado y paciencia';
+      booster = 'Una pizca de hierba fresca picada (perejil o cilantro) al final le da aroma de restaurante.';
     }
 
     return res.json({
@@ -764,6 +929,124 @@ Genera:
       detectedMistake: mistake,
       personalizedAdvice: advice,
       xpAwarded: 50,
+      skillImproved: skill,
+      flavorBoosterLearned: booster,
+      tastePreferenceDetected: preference,
+      toneEvolutionComment: 'Has demostrado constancia; el mentor te guiará con recetas con más personalidad.',
+    });
+  }
+});
+
+// 4. Intelligent Level-Adaptive Recommendation ("Tu Siguiente Hito Culinario")
+app.post('/api/mentor/recommend-next', async (req, res) => {
+  try {
+    const { userProfile, recipesCatalog } = req.body;
+    const ai = getAi();
+    const apiKey = process.env.GEMINI_API_KEY;
+    const userLevel = Number(userProfile?.level) || 1;
+    const cookedTitles = (userProfile?.cookedHistory || []).map((h: any) => h.recipeTitle);
+
+    const fallbackRecommendations: Record<number, any> = {
+      1: {
+        recommendedRecipeId: cookedTitles.some((t: string) => t.includes('Huevo') || t.includes('Huevos'))
+          ? 'arroz-blanco-perfecto'
+          : 'huevos-revueltos-cremosos',
+        headline: 'Tu Siguiente Gran Hito de Iniciación (Nivel 1)',
+        mentorReasoning: cookedTitles.some((t: string) => t.includes('Huevo') || t.includes('Huevos'))
+          ? 'Ya perdiste el miedo a la sartén con los huevos revueltos. Tu siguiente paso fundamental para dominar la cocina es el Arroz Blanco Perfecto: aprenderás la proporción 1:2 y a no destapar la olla.'
+          : 'Para empezar desde cero absoluto sin miedo ni quemaduras, los Huevos Revueltos Suaves son la mejor escuela: aprenderás a usar la llama mínima y el calor residual.',
+        learningFocus: 'Control de fuego mínimo y proporciones básicas sin prisa.',
+        encouragement: 'Todo gran chef empezó sin saber hervir agua. ¡Vamos con calma!',
+      },
+      2: {
+        recommendedRecipeId: 'pechuga-jugosa-sarten',
+        headline: 'Desafío de Control Térmico (Nivel 2)',
+        mentorReasoning: 'En el Nivel 2 el gran salto es aprender a sellar sin quemar y sin que la comida quede seca adentro. La Pechuga de Pollo Doradita a la Sartén te enseñará el secreto del fuego medio-alto y el reposo jugoso.',
+        learningFocus: 'Sellado a fuego medio-alto y cocción con tapa a fuego bajo.',
+        encouragement: '¡Ya dominas lo básico! Ahora le damos jugosidad y texturas doradas a tus platos.',
+      },
+      3: {
+        recommendedRecipeId: 'arroz-chaufa-cantones',
+        headline: 'Desafío de Fuego Vivo y Salteado (Nivel 3)',
+        mentorReasoning: 'Tu cocina ya tiene ritmo. El Arroz Chaufa / Frito Cantones te enseñará a saltear con energía usando arroz frío y a caramelizar la salsa de soya por los bordes calientes.',
+        learningFocus: 'Salteado rápido y aprovechamiento inteligente de sobras.',
+        encouragement: '¡Manejas la sartén con soltura! Este plato te dará velocidad y sazón callejera.',
+      },
+      4: {
+        recommendedRecipeId: 'omelette-baveuse',
+        headline: 'Desafío de Técnica Francesa (Nivel 4)',
+        mentorReasoning: 'Es momento de refinar el tacto. El auténtico Omelette Francés Baveuse requiere emulsionar mantequilla espumosa y enrollar el huevo con centro cremoso sin marcas tostadas.',
+        learningFocus: 'Emulsión láctea y técnica de muñeca para enrollar.',
+        encouragement: 'Tus sentidos culinarios están muy afilados. ¡Sorprende a todos con este clásico!',
+      },
+      5: {
+        recommendedRecipeId: 'arroz-chaufa-cantones',
+        headline: 'Creación Libre e Intuición (Nivel 5)',
+        mentorReasoning: 'Estás en la cumbre: tu paladar es tu mejor receta. Prueba a personalizar cualquier plato con lo que tengas en la alacena aplicando tus propios sustitutos.',
+        learningFocus: 'Ajuste de sazón en tiempo real y cocina intuitiva.',
+        encouragement: '¡Eres un referente en tu cocina! Confía en tu olfato y tu gusto.',
+      },
+    };
+
+    if (!apiKey) {
+      return res.json(fallbackRecommendations[userLevel] || fallbackRecommendations[1]);
+    }
+
+    const availableListStr = (recipesCatalog || [])
+      .map((r: any) => `- ID: "${r.id}" | Título: "${r.title}" | Nivel Requerido: ${r.requiredLevel || 1} | Meta: "${r.learningGoal || r.description}"`)
+      .join('\n');
+
+    const prompt = `Actúa como el Chef Mentor de "Chef Cero" en español latinoamericano.
+Tu misión es recomendar el SIGUIENTE plato exacto que debe cocinar este aprendiz para evolucionar de principiante a chef.
+
+PERFIL DEL APRENDIZ:
+- Nivel Culinario Actual: Nivel ${userLevel} (${userProfile?.levelTitle || 'Cero Absoluto'})
+- Platos que ya ha cocinado: ${cookedTitles.join(', ') || 'Aún no ha cocinado ningún plato completo (empezando desde cero total)'}
+- Errores pasados registrados: ${userProfile?.pastMistakes?.join(', ') || 'Ninguno'}
+- Habilidades ya dominadas: ${userProfile?.masteredSkills?.join(', ') || 'Primeros pasos'}
+
+CATÁLOGO DE RECETAS DISPONIBLES:
+${availableListStr}
+
+REGLAS DE SELECCIÓN:
+1. Si el usuario es Nivel 1 (Cero Absoluto), sugiere SOLO recetas de Nivel 1 que aún no haya dominado (ej. Huevos revueltos, Fideos con mantequilla, Arroz blanco o Pebre).
+2. Si ya cocinó las de Nivel 1 y tiene buen puntaje, o si está cerca de subir a Nivel 2, explícale cómo esta receta lo graduará a su siguiente nivel.
+3. Si es Nivel 2, sugiere recetas de Nivel 2 (como Sofrito, Pechuga jugosa o Tortilla de patatas).
+4. Explica el razonamiento con calidez pedagógica, sin juzgar, animando al aprendiz y destacando QUÉ técnica específica va a aprender hoy.`;
+
+    const response = await callGeminiWithFallback(ai, {
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            recommendedRecipeId: { type: Type.STRING },
+            headline: { type: Type.STRING },
+            mentorReasoning: { type: Type.STRING },
+            learningFocus: { type: Type.STRING },
+            encouragement: { type: Type.STRING },
+          },
+          required: ['recommendedRecipeId', 'headline', 'mentorReasoning', 'learningFocus', 'encouragement'],
+        },
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, null as any);
+    if (!parsed || !parsed.recommendedRecipeId) {
+      throw new Error('Gemini recommendation invalid structure');
+    }
+    return res.json(parsed);
+  } catch (error: any) {
+    console.warn('Gemini recommendation fallback engaged:', error?.message);
+    const userLevel = Number(req.body?.userProfile?.level) || 1;
+    const cooked = (req.body?.userProfile?.cookedHistory || []).map((h: any) => h.recipeTitle);
+    return res.json({
+      recommendedRecipeId: cooked.some((t: string) => t.includes('Huevo')) ? 'arroz-blanco-perfecto' : 'huevos-revueltos-cremosos',
+      headline: userLevel === 1 ? 'Tu Siguiente Paso en Nivel 1 (Cero Absoluto)' : `Tu Siguiente Reto en Nivel ${userLevel}`,
+      mentorReasoning: 'El camino del cocinero se construye plato a plato. Te recomendamos esta preparación porque afianza tu control del fuego y te dará la confianza para dar el salto al siguiente nivel.',
+      learningFocus: 'Control de temperatura y confianza en los sentidos.',
+      encouragement: '¡Cada receta completada suma experiencia a tu Cuaderno de Chef!',
     });
   }
 });
@@ -803,8 +1086,7 @@ Determina la zona EXACTA de la cocina entre estas opciones:
 
 Explica con claridad científica y cotidiana la razón de esta ubicación y los días estimados de duración.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await callGeminiWithFallback(ai, {
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -868,7 +1150,59 @@ Explica con claridad científica y cotidiana la razón de esta ubicación y los 
   }
 });
 
+// Endpoint para rescate inteligente de sobras con IA (Zero Waste estilo Sidekick)
+app.post('/api/mentor/rescue-leftover', async (req, res) => {
+  try {
+    const { leftoverItem } = req.body;
+    if (!leftoverItem || typeof leftoverItem !== 'string') {
+      return res.status(400).json({ error: 'Falta leftoverItem' });
+    }
+
+    const ai = getAi();
+    const prompt = `Eres el Chef Mentor de "Chef Cero", una escuela de cocina cálida y paciente para principiantes.
+El usuario tiene una sobra en su nevera: "${leftoverItem}".
+Explícale con calma cómo transformar esta sobra en un plato delicioso en 10 minutos o menos, sin comprar nada raro.
+
+Devuelve EXCLUSIVAMENTE un objeto JSON válido con este formato:
+{
+  "headline": "Transformación mágica para: <nombre de la sobra>",
+  "scienceReason": "Por qué esta sobra es genial para cocinar (ej: el almidón frío se separa, los azúcares se concentran al secarse)",
+  "quickDish": "Instrucción de 3 o 4 líneas de cómo convertirlo en un plato caliente en sartén u olla en menos de 10 min",
+  "flavorSecret": "Un truco sencillo para que sepa a comida recién hecha (ej: un toque ácido de limón, orégano, queso derretido)",
+  "neverDo": "Un error común a evitar (ej: no recalentar en microondas seco, no dejar fuera de la nevera)"
+}`;
+
+    const response = await callGeminiWithFallback(ai, {
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.4,
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, {
+      headline: `Aprovechar al máximo: ${leftoverItem}`,
+      scienceReason: 'La comida ya cocinada necesita calor medio y humedad para revivir sus jugos.',
+      quickDish: `Pica la sobra en trozos pequeños, calienta una sartén con un poco de aceite y ajo picado, y saltea 4 minutos a fuego medio. Agrega 1 huevo batido o fideos para armar un plato completo.`,
+      flavorSecret: 'Gotitas de limón y una pizca de sal marina al apagar el fuego.',
+      neverDo: 'No lo calientes a fuego máximo porque se endurece el exterior y se seca.',
+    });
+
+    return res.json(parsed);
+  } catch (err: any) {
+    console.error('Chef Cero: Error en rescate de sobra:', err);
+    return res.json({
+      headline: `Transformación rápida para: ${req.body?.leftoverItem || 'sobra'}`,
+      scienceReason: 'El calor en sartén reactiva los aromas de la comida cocinada.',
+      quickDish: 'Saltea en sartén con una cucharadita de aceite o mantequilla a fuego medio durante 3 a 5 minutos.',
+      flavorSecret: 'Un toque de orégano y queso fundido.',
+      neverDo: 'Nunca dejes comida cocinada fuera de la nevera más de dos horas.',
+    });
+  }
+});
+
 // Vite middleware in development vs static files in production
+
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

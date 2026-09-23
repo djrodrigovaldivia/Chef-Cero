@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, Send, X, Clock, Flame, ShieldAlert, Sparkles, ChefHat, MessageSquare, HelpCircle } from 'lucide-react';
-import { UserProfile, ChatMessage } from '../types';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, Send, X, Clock, Flame, ShieldAlert, Sparkles, ChefHat, MessageSquare, HelpCircle, Brain, Trash2, Plus, Check } from 'lucide-react';
+import { UserProfile, ChatMessage, ChefMemoryFact } from '../types';
 import { speakSpanishText, stopSpeaking, playEmergencyAlertSound } from '../utils/audioAlert';
 import { requestNotificationPermission as requestBrowserNotificationPermission } from '../utils/notifications';
 import { useSilentMode } from '../utils/useSilentMode';
@@ -16,6 +16,8 @@ interface VoiceAssistantModalProps {
     heatLevel?: string;
   };
   onAddTimer?: (seconds: number, label: string) => void;
+  onLearnFact?: (category: 'fuego' | 'gustos' | 'equipamiento' | 'habito' | 'fortaleza', fact: string) => void;
+  onRemoveFact?: (id: string) => void;
 }
 
 export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
@@ -24,12 +26,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   userProfile,
   currentContext,
   onAddTimer,
+  onLearnFact,
+  onRemoveFact,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       sender: 'chef',
-      text: '¡Hola! Soy tu Chef Mentor en vivo. Cocina con calma y sin miedo. Puedes hablarme por micrófono o tocar los botones de emergencia si ves humo o dudas con el fuego.',
+      text: '¡Hola! Soy tu Chef Mentor en vivo. Cocina con calma y sin miedo. Puedes hablarme por micrófono o escribirme si tienes dudas con el fuego, la sal o los tiempos de cocción.',
       timestamp: 'Ahora',
     },
   ]);
@@ -38,12 +42,17 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
+  const [isContinuousMode, setIsContinuousMode] = useState(true);
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [newCustomFact, setNewCustomFact] = useState('');
+  const [lastLearnedNotification, setLastLearnedNotification] = useState<string | null>(null);
   const { isSilent, toggleSilentMode } = useSilentMode();
   const [emergencyAlert, setEmergencyAlert] = useState<string | null>(null);
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const autoListenTimeoutRef = useRef<any>(null);
 
   // Cerrar con tecla Escape para máxima accesibilidad
   useEffect(() => {
@@ -56,14 +65,29 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Initialize Web Speech Recognition if available
+  // Helper para iniciar escucha segura
+  const startListeningSafe = () => {
+    if (!recognitionRef.current || isSilent) return;
+    try {
+      recognitionRef.current.abort();
+    } catch (_) {}
+    try {
+      recognitionRef.current.start();
+      setSpeechNotice(null);
+    } catch (err) {
+      console.warn('Speech start safe notice:', err);
+    }
+  };
+
+  // Initialize Web Speech Recognition if available (configurado para español latinoamericano)
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.lang = 'es-ES';
+      // Español de Latinoamérica neutro / regional
+      recognition.lang = 'es-419';
 
       recognition.onstart = () => {
         setIsListening(true);
@@ -85,7 +109,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         if (event.error === 'not-allowed') {
           setSpeechNotice('Acceso al micrófono denegado. Puedes escribir o tocar las consultas rápidas.');
         } else if (event.error === 'no-speech') {
-          setSpeechNotice('No se detectó voz. Intenta pulsar de nuevo y hablar.');
+          // Si no habló en modo continuo, simplemente dejamos en reposo
         } else {
           console.warn('Speech recognition notice:', event.error);
         }
@@ -102,6 +126,9 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
     return () => {
       stopSpeaking();
+      if (autoListenTimeoutRef.current) {
+        clearTimeout(autoListenTimeoutRef.current);
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
@@ -130,17 +157,48 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     } else {
       setSpeechNotice(null);
       stopSpeaking();
-      try {
-        recognitionRef.current.start();
-      } catch (err) {
-        console.warn('Recognition start error:', err);
-      }
+      startListeningSafe();
     }
+  };
+
+  const handleReplayAudio = (text: string) => {
+    stopSpeaking();
+    setIsSpeaking(true);
+    speakSpanishText(text, {
+      speaker: 'Chef Cero',
+      badge: isSilent ? 'Modo Silencioso' : 'Voz Latinoamericana',
+      onEnd: () => {
+        setIsSpeaking(false);
+        if (isContinuousMode && !isSilent) {
+          autoListenTimeoutRef.current = setTimeout(() => {
+            startListeningSafe();
+          }, 600);
+        }
+      },
+    });
   };
 
   const handleSendQuery = async (queryToSend?: string) => {
     const text = (queryToSend || inputQuery).trim();
     if (!text) return;
+
+    // Si el usuario dijo palabras de despedida o pausa, pausar con cariño
+    const lower = text.toLowerCase();
+    if (lower === 'gracias' || lower === 'muchas gracias' || lower === 'pausa' || lower === 'silencio' || lower === 'listo chef' || lower === 'hasta luego') {
+      const farewellMsg: ChatMessage = {
+        id: String(Date.now()),
+        sender: 'chef',
+        text: '¡Con gusto! Aquí me quedo a tu lado en la mesada. Si notas humo o te surge cualquier duda, vuelve a tocar el micrófono.',
+        timestamp: 'Ahora',
+      };
+      setMessages((prev) => [...prev, { id: String(Date.now() - 1), sender: 'user', text, timestamp: 'Ahora' }, farewellMsg]);
+      setInputQuery('');
+      speakSpanishText(farewellMsg.text, {
+        speaker: 'Chef Cero',
+        badge: isSilent ? 'Modo Silencioso' : 'Voz Latinoamericana',
+      });
+      return;
+    }
 
     setInputQuery('');
     const userMsg: ChatMessage = {
@@ -153,8 +211,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
-    // Check emergency trigger words locally for instant audio reaction
-    const lower = text.toLowerCase();
+    // Alerta de seguridad instantánea acústica
     if (lower.includes('humo') || lower.includes('quema') || lower.includes('fuego') || lower.includes('aceite')) {
       playEmergencyAlertSound();
     }
@@ -168,13 +225,18 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           userProfile: {
             levelTitle: userProfile.levelTitle,
             pastMistakes: userProfile.pastMistakes,
+            evolutionaryMemories: userProfile.evolutionaryMemories || [],
           },
           currentContext,
+          history: messages.slice(-6).map((m) => ({
+            sender: m.sender,
+            text: m.text,
+          })),
         }),
       });
 
       const data = await response.json();
-      const chefReplyText = data.reply || 'Respira. Aparta la sartén del fuego y revisa si el calor está muy alto.';
+      const chefReplyText = data.reply || 'Respira con calma. Aparta la sartén de la hornilla mientras revisamos qué está pasando.';
 
       if (data.safetyAlert) {
         setEmergencyAlert(data.safetyAlert);
@@ -190,6 +252,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         } catch {}
       }
 
+      // Aprendizaje Progresivo en Tiempo Real
+      if (data.learnedMemory?.fact && onLearnFact) {
+        const cat = data.learnedMemory.category || 'habito';
+        onLearnFact(cat as any, data.learnedMemory.fact);
+        setLastLearnedNotification(data.learnedMemory.fact);
+        setTimeout(() => setLastLearnedNotification(null), 7000);
+      }
+
       const chefMsg: ChatMessage = {
         id: String(Date.now() + 1),
         sender: 'chef',
@@ -200,13 +270,19 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
       setMessages((prev) => [...prev, chefMsg]);
 
-      // Si el usuario no tiene la voz desactivada (Modo Silencioso convierte a subtítulos automáticamente)
+      // Reproducir voz en español latinoamericano y reactivar conversación continua al terminar
       setIsSpeaking(true);
       speakSpanishText(chefReplyText, {
         speaker: 'Chef Cero',
-        badge: isSilent ? 'Modo Silencioso' : 'Voz del Chef',
+        badge: isSilent ? 'Modo Silencioso' : 'Voz Latinoamericana',
         onEnd: () => {
           setIsSpeaking(false);
+          // Si el modo conversación continua está activo y no es silencioso, abrir micrófono automáticamente
+          if (isContinuousMode && !isSilent) {
+            autoListenTimeoutRef.current = setTimeout(() => {
+              startListeningSafe();
+            }, 700);
+          }
         },
       });
     } catch (err) {
@@ -214,13 +290,13 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       const fallbackMsg: ChatMessage = {
         id: String(Date.now() + 2),
         sender: 'chef',
-        text: '¡Atención! Si sientes que algo se te pasa de cocción o huele a quemado, retira la sartén hacia una hornalla fría y apaga el fuego mientras revisas.',
+        text: '¡Ojo con la hornilla! Si algo huele a quemado o notas mucho humo, retira la sartén hacia una hornilla fría y baja el fuego mientras revisamos.',
         timestamp: 'Ahora',
       };
       setMessages((prev) => [...prev, fallbackMsg]);
       speakSpanishText(fallbackMsg.text, {
         speaker: 'Chef Cero',
-        badge: isSilent ? 'Modo Silencioso' : 'Voz del Chef',
+        badge: isSilent ? 'Modo Silencioso' : 'Voz Latinoamericana',
         isEmergency: true,
       });
     } finally {
@@ -230,6 +306,15 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
   const handleQuickAction = (text: string) => {
     handleSendQuery(text);
+  };
+
+  const handleAddManualFact = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCustomFact.trim() || !onLearnFact) return;
+    onLearnFact('gustos', newCustomFact.trim());
+    setNewCustomFact('');
+    setLastLearnedNotification(`Nota guardada: "${newCustomFact.trim()}"`);
+    setTimeout(() => setLastLearnedNotification(null), 5000);
   };
 
   if (!isOpen) return null;
@@ -256,7 +341,44 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Toggle Conversación Continua Manos Libres */}
+            <button
+              onClick={() => setIsContinuousMode((prev) => !prev)}
+              title={
+                isContinuousMode
+                  ? 'Conversación Fluida ACTIVA: el Chef abre el micrófono solo tras hablar para escucharte'
+                  : 'Modo manual: toca el botón de micrófono cuando quieras hablar'
+              }
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition ${
+                isContinuousMode
+                  ? 'bg-amber-600 text-white shadow-inner ring-2 ring-amber-300/50'
+                  : 'bg-white/20 hover:bg-white/30 text-amber-100'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">
+                {isContinuousMode ? 'Fluido: ON' : 'Fluido: OFF'}
+              </span>
+            </button>
+
+            {/* Ver Memoria Aprendida */}
+            <button
+              onClick={() => setShowMemoryPanel((prev) => !prev)}
+              title="Ver lo que el Chef Mentor ha aprendido sobre ti"
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition ${
+                showMemoryPanel
+                  ? 'bg-stone-900 text-amber-300 ring-2 ring-amber-300/40'
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              }`}
+            >
+              <Brain className="w-3.5 h-3.5 text-amber-200" />
+              <span className="hidden sm:inline">Memoria</span>
+              <span className="px-1.5 py-0.2 bg-white/25 rounded-full text-[10px]">
+                {userProfile.evolutionaryMemories?.length || 0}
+              </span>
+            </button>
+
             {/* Toggle de Modo Silencioso / Voz */}
             <button
               onClick={() => {
@@ -272,7 +394,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                   : 'Voz activada: las respuestas se pronuncian en voz alta (haz clic para silenciar)'
               }
               aria-label={isSilent ? 'Activar voz del asistente' : 'Activar modo silencioso con subtítulos'}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
                 isSilent
                   ? 'bg-stone-900 text-amber-300 ring-2 ring-amber-300/40'
                   : 'bg-white/20 hover:bg-white/30 text-white'
@@ -281,12 +403,12 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               {isSilent ? (
                 <>
                   <VolumeX className="w-4 h-4 text-amber-300" />
-                  <span className="hidden sm:inline">Modo Silencioso</span>
+                  <span className="hidden md:inline">Silencio</span>
                 </>
               ) : (
                 <>
                   <Volume2 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Voz Activa</span>
+                  <span className="hidden md:inline">Voz</span>
                 </>
               )}
             </button>
@@ -302,6 +424,99 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Notificación flotante de nuevo dato aprendido en tiempo real */}
+        {lastLearnedNotification && (
+          <div
+            role="status"
+            className="bg-emerald-600 text-white px-4 py-2.5 flex items-center justify-between text-xs shadow-md animate-in slide-in-from-top-2 duration-300 border-b border-emerald-700"
+          >
+            <div className="flex items-center gap-2">
+              <Brain className="w-4 h-4 text-emerald-200 shrink-0 animate-bounce" />
+              <span>
+                <strong className="font-bold">🧠 El Chef aprendió de ti:</strong> {lastLearnedNotification}
+              </span>
+            </div>
+            <button
+              onClick={() => setLastLearnedNotification(null)}
+              className="text-[11px] bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded text-white font-medium"
+            >
+              Genial
+            </button>
+          </div>
+        )}
+
+        {/* Panel de Memoria Culinaria Evolutiva (Desplegable) */}
+        {showMemoryPanel && (
+          <div className="bg-amber-50/90 border-b border-amber-200 p-4 max-h-60 overflow-y-auto animate-in slide-in-from-top-3 duration-200 text-xs text-stone-800">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Brain className="w-4 h-4 text-amber-700" />
+                <h4 className="font-bold text-amber-950 uppercase tracking-wide text-[11px]">
+                  Memoria Culinaria Evolutiva del Chef
+                </h4>
+              </div>
+              <span className="text-[10px] text-amber-800 font-medium">
+                La IA personaliza cada consejo con estos datos
+              </span>
+            </div>
+
+            {(!userProfile.evolutionaryMemories || userProfile.evolutionaryMemories.length === 0) ? (
+              <p className="text-stone-500 italic py-2">
+                Aún no hay notas aprendidas. El Chef irá registrando tus gustos, errores superados y utensilios mientras conversas.
+              </p>
+            ) : (
+              <div className="space-y-1.5 mb-3">
+                {userProfile.evolutionaryMemories.map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-start justify-between gap-2 p-2 bg-white rounded-lg border border-amber-200/80 shadow-2xs"
+                  >
+                    <div className="flex items-start gap-1.5">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 bg-amber-100 text-amber-800 border border-amber-200">
+                        {m.category === 'fuego' && '🔥 Fuego'}
+                        {m.category === 'fortaleza' && '⭐ Fortaleza'}
+                        {m.category === 'gustos' && '🧂 Gustos'}
+                        {m.category === 'equipamiento' && '🍳 Equipo'}
+                        {m.category === 'habito' && '💡 Hábito'}
+                        {!['fuego', 'fortaleza', 'gustos', 'equipamiento', 'habito'].includes(m.category) && m.category}
+                      </span>
+                      <p className="text-stone-800 leading-snug">{m.fact}</p>
+                    </div>
+                    {onRemoveFact && (
+                      <button
+                        onClick={() => onRemoveFact(m.id)}
+                        className="text-stone-400 hover:text-red-600 p-1 transition"
+                        title="Olvidar este dato"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Formulario rápido para añadir una nota manual al Chef */}
+            <form onSubmit={handleAddManualFact} className="flex gap-1.5 pt-1">
+              <input
+                type="text"
+                value={newCustomFact}
+                onChange={(e) => setNewCustomFact(e.target.value)}
+                placeholder="Ej: Solo tengo cocina eléctrica de 4 placas, no uso picante..."
+                className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+              <button
+                type="submit"
+                disabled={!newCustomFact.trim()}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Recordar</span>
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* Banner informativo de Modo Silencioso Activo */}
         {isSilent && (
@@ -382,6 +597,19 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                   </div>
                 )}
                 <p className="whitespace-pre-line">{msg.text}</p>
+                {msg.sender === 'chef' && (
+                  <div className="mt-2 pt-2 border-t border-stone-100 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => handleReplayAudio(msg.text)}
+                      className="inline-flex items-center gap-1 text-[11px] text-amber-700 hover:text-amber-900 font-semibold transition py-0.5 px-2 rounded-lg hover:bg-amber-50"
+                      title="Escuchar respuesta en audio en español latinoamericano"
+                    >
+                      <Volume2 className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Escuchar en audio</span>
+                    </button>
+                    <span className="text-[10px] text-stone-400 font-medium">Español Latino</span>
+                  </div>
+                )}
               </div>
               <span className="text-[10px] text-stone-400 mt-1 px-1">{msg.timestamp}</span>
             </div>
@@ -440,6 +668,27 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Status banner when listening in continuous hands-free mode */}
+        {isListening && (
+          <div className="px-4 py-2 bg-red-50 border-t border-red-200 flex items-center justify-between text-xs text-red-900 animate-in fade-in">
+            <div className="flex items-center gap-2 font-medium">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span>
+              </span>
+              <span>
+                <strong>El Chef te escucha en vivo:</strong> Habla con naturalidad (o di <em>"gracias"</em> / <em>"pausa"</em> para reposar).
+              </span>
+            </div>
+            <button
+              onClick={toggleListening}
+              className="text-[11px] bg-red-200/80 hover:bg-red-300 text-red-950 font-bold px-2 py-0.5 rounded transition"
+            >
+              Pausar micrófono
+            </button>
+          </div>
+        )}
 
         {/* Input Bar with Hands-Free Mic Button */}
         <div className="p-4 bg-white border-t border-stone-200 flex items-center gap-2">
