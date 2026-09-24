@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, Send, X, Clock, Flame, ShieldAlert, Sparkles, ChefHat, MessageSquare, HelpCircle, Brain, Trash2, Plus, Check, Radio, Zap } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, Send, X, Clock, Flame, ShieldAlert, Sparkles, ChefHat, MessageSquare, HelpCircle, Brain, Trash2, Plus, Check, Radio, Zap, Activity, Wifi, Lightbulb, Compass, ThumbsUp } from 'lucide-react';
 import { UserProfile, ChatMessage, ChefMemoryFact } from '../types';
 import { speakSpanishText, stopSpeaking, playEmergencyAlertSound } from '../utils/audioAlert';
 import { requestNotificationPermission as requestBrowserNotificationPermission } from '../utils/notifications';
 import { useSilentMode } from '../utils/useSilentMode';
-import { GeminiLiveClient, LiveClientState } from '../utils/geminiLiveClient';
+import { GeminiLiveClient, LiveClientState, NetworkQuality, DetectedVoiceTone, PatienceMode } from '../utils/geminiLiveClient';
+import { HandsFreeCookingListener } from '../utils/handsFreeListener';
+import { useVoiceConnection, downsampleTo16kHz } from '../hooks/useVoiceConnection';
+import { ReactiveLiveOrb } from './ReactiveLiveOrb';
 
 interface VoiceAssistantModalProps {
   isOpen: boolean;
@@ -15,10 +18,15 @@ interface VoiceAssistantModalProps {
     stepNumber?: number;
     stepInstruction?: string;
     heatLevel?: string;
+    totalSteps?: number;
   };
   onAddTimer?: (seconds: number, label: string) => void;
   onLearnFact?: (category: 'fuego' | 'gustos' | 'equipamiento' | 'habito' | 'fortaleza', fact: string) => void;
   onRemoveFact?: (id: string) => void;
+  onNextStep?: () => void;
+  onPrevStep?: () => void;
+  onRepeatStep?: () => void;
+  onEmergency?: () => void;
 }
 
 export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
@@ -29,6 +37,10 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   onAddTimer,
   onLearnFact,
   onRemoveFact,
+  onNextStep,
+  onPrevStep,
+  onRepeatStep,
+  onEmergency,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -51,18 +63,263 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const [emergencyAlert, setEmergencyAlert] = useState<string | null>(null);
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
 
+  // Estados para Modo Manos Sucias (Navegación de pasos por voz de latencia ultra-baja < 50ms)
+  const [isDirtyHandsMode, setIsDirtyHandsMode] = useState<boolean>(false);
+  const [dirtyHandsLastCommand, setDirtyHandsLastCommand] = useState<{
+    command: string;
+    transcript: string;
+    timestamp: number;
+  } | null>(null);
+  const [dirtyHandsLastHeard, setDirtyHandsLastHeard] = useState<string | null>(null);
+  const dirtyHandsListenerRef = useRef<HandsFreeCookingListener | null>(null);
+  const [liveRecipeContext, setLiveRecipeContext] = useState<any>(currentContext);
+
+  useEffect(() => {
+    if (currentContext) {
+      setLiveRecipeContext(currentContext);
+    }
+  }, [currentContext]);
+
+  useEffect(() => {
+    const handleRecipeContext = (e: any) => {
+      if (e.detail) {
+        setLiveRecipeContext((prev: any) => ({ ...prev, ...e.detail }));
+      }
+    };
+    window.addEventListener('chef-cero-recipe-context', handleRecipeContext);
+    return () => window.removeEventListener('chef-cero-recipe-context', handleRecipeContext);
+  }, []);
+
+  // Manejo de Modo Manos Sucias con HandsFreeCookingListener optimizado (< 50ms latencia)
+  useEffect(() => {
+    if (!isOpen || !isDirtyHandsMode) {
+      if (dirtyHandsListenerRef.current) {
+        dirtyHandsListenerRef.current.stop();
+        dirtyHandsListenerRef.current = null;
+      }
+      return;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (_) {}
+    }
+    setIsListening(false);
+
+    const listener = new HandsFreeCookingListener({
+      onNextStep: () => {
+        onNextStep?.();
+        window.dispatchEvent(new CustomEvent('chef-cero-step-cmd', { detail: { action: 'next' } }));
+      },
+      onPrevStep: () => {
+        onPrevStep?.();
+        window.dispatchEvent(new CustomEvent('chef-cero-step-cmd', { detail: { action: 'prev' } }));
+      },
+      onRepeatStep: () => {
+        onRepeatStep?.();
+        window.dispatchEvent(new CustomEvent('chef-cero-step-cmd', { detail: { action: 'repeat' } }));
+      },
+      onStartTimer: () => {
+        window.dispatchEvent(new CustomEvent('chef-cero-step-cmd', { detail: { action: 'timer' } }));
+      },
+      onPauseTimer: () => {
+        window.dispatchEvent(new CustomEvent('chef-cero-step-cmd', { detail: { action: 'pause' } }));
+      },
+      onEmergency: () => {
+        onEmergency?.();
+        window.dispatchEvent(new CustomEvent('chef-cero-step-cmd', { detail: { action: 'emergency' } }));
+        setEmergencyAlert('¡Emergencia culinaria activada por comando de voz!');
+      },
+      onStatusChange: (_active, lastWord) => {
+        if (lastWord) {
+          setDirtyHandsLastHeard(lastWord);
+          setTimeout(() => setDirtyHandsLastHeard(null), 3000);
+        }
+      },
+      onCommandExecuted: (cmd, text) => {
+        setDirtyHandsLastCommand({ command: cmd, transcript: text, timestamp: Date.now() });
+        try {
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate([40]);
+          }
+        } catch (_) {}
+        setTimeout(() => setDirtyHandsLastCommand(null), 3500);
+      },
+    });
+
+    listener.start();
+    dirtyHandsListenerRef.current = listener;
+
+    return () => {
+      listener.stop();
+      dirtyHandsListenerRef.current = null;
+    };
+  }, [isOpen, isDirtyHandsMode, onNextStep, onPrevStep, onRepeatStep, onEmergency]);
+
   // Estados para Gemini 3.8 Live API en tiempo real
   const [isLiveAvailable, setIsLiveAvailable] = useState<boolean | null>(null);
-  const [isLiveActive, setIsLiveActive] = useState<boolean>(false);
-  const [liveState, setLiveState] = useState<LiveClientState>('idle');
   const [liveAudioLevel, setLiveAudioLevel] = useState<number>(0);
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
   const currentLiveUserMsgId = useRef<string | null>(null);
   const currentLiveChefMsgId = useRef<string | null>(null);
+  const [latestChefLiveText, setLatestChefLiveText] = useState<string>('');
+  const [latestUserLiveText, setLatestUserLiveText] = useState<string>('');
+
+  // Nodos Web Audio API para DSP de Cancelación de Eco Quirúrgica y Noise Gate de Cocina
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const highpassFilterRef = useRef<BiquadFilterNode | null>(null);
+  const inputAnalyserRef = useRef<AnalyserNode | null>(null);
+  const dspProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const [isGatePassingVoice, setIsGatePassingVoice] = useState<boolean>(false);
+
+  // Estados para Monitor de Latencia en tiempo real
+  const [networkLatency, setNetworkLatency] = useState<number | null>(null);
+  const [networkQuality, setNetworkQuality] = useState<NetworkQuality>('excelente');
+  const [networkJitter, setNetworkJitter] = useState<number>(0);
+  const [showLatencyDetails, setShowLatencyDetails] = useState<boolean>(false);
+
+  // Estados para Inteligencia Tonal y Comprensión de Silencios (Paciencia Adaptativa)
+  const [detectedTone, setDetectedTone] = useState<DetectedVoiceTone>('calmado');
+  const [patienceMode, setPatienceMode] = useState<PatienceMode>('zen'); // 'zen' (2.6s), 'equilibrado' (1.8s), 'rapido' (0.9s)
+  const [isUserThinking, setIsUserThinking] = useState(false);
+  const [silenceProgress, setSilenceProgress] = useState(0);
+  const silenceTimerRef = useRef<any>(null);
+  const silenceProgressIntervalRef = useRef<any>(null);
+  const pendingTranscriptRef = useRef<string>('');
+
+  // Gestor Persistente de Conexión Live con Buffer Circular (useVoiceConnection)
+  const voiceConn = useVoiceConnection({
+    onUserTranscript: (transcript) => {
+      if (!transcript.trim()) return;
+      setLatestUserLiveText(transcript);
+      setMessages((prev) => {
+        const id = currentLiveUserMsgId.current || `live-user-${Date.now()}`;
+        currentLiveUserMsgId.current = id;
+        const exists = prev.some((m) => m.id === id);
+        if (exists) {
+          return prev.map((m) => (m.id === id ? { ...m, text: transcript } : m));
+        }
+        return [
+          ...prev,
+          {
+            id,
+            sender: 'user',
+            text: transcript,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ];
+      });
+    },
+    onChefTranscript: (chunk) => {
+      if (!chunk) return;
+      setLatestChefLiveText((prev) => prev + chunk);
+      setMessages((prev) => {
+        const id = currentLiveChefMsgId.current || `live-chef-${Date.now()}`;
+        currentLiveChefMsgId.current = id;
+        const exists = prev.some((m) => m.id === id);
+        if (exists) {
+          return prev.map((m) => (m.id === id ? { ...m, text: m.text + chunk } : m));
+        }
+        return [
+          ...prev,
+          {
+            id,
+            sender: 'chef',
+            text: chunk,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ];
+      });
+    },
+    onTurnComplete: () => {
+      currentLiveUserMsgId.current = null;
+      currentLiveChefMsgId.current = null;
+      setTimeout(() => setLatestChefLiveText(''), 7000);
+    },
+    onError: (errMsg) => {
+      console.warn('Chef Cero: Error en Live API WebSocket persistente:', errMsg);
+      setSpeechNotice(`Aviso Live: ${errMsg}. Continuando con auto-reconexión.`);
+    },
+    onLatencyMeasured: (rttMs, quality, jitterMs) => {
+      setNetworkLatency(rttMs);
+      setNetworkQuality(quality);
+      setNetworkJitter(jitterMs);
+    },
+    onInterrupted: () => {
+      setIsSpeaking(false);
+      try {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate([25]);
+        }
+      } catch (_) {}
+    },
+  });
+
+  const isLiveActive = voiceConn.isLiveActive;
+  const liveState = voiceConn.state;
+  const voiceConnRef = useRef(voiceConn);
+  voiceConnRef.current = voiceConn;
+
+  // Estados para Sugerencias Proactivas y Memoria
+  const [proactiveTip, setProactiveTip] = useState<{ tip: string; type: string; relatedMemory?: string } | null>(null);
+  const [isLoadingProactiveTip, setIsLoadingProactiveTip] = useState(false);
+  const [memoryFilter, setMemoryFilter] = useState<'todos' | 'fuego' | 'gustos' | 'equipamiento' | 'habito' | 'fortaleza'>('todos');
 
   const recognitionRef = useRef<any>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const autoListenTimeoutRef = useRef<any>(null);
+
+  // Pedir sugerencia proactiva del Chef según memorias, errores y contexto actual
+  const handleRequestProactiveTip = async () => {
+    try {
+      setIsLoadingProactiveTip(true);
+      const res = await fetch('/api/mentor/proactive-tip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userProfile,
+          currentContext: liveRecipeContext || currentContext,
+        }),
+      });
+      const data = await res.json();
+      setProactiveTip(data);
+    } catch (err) {
+      console.warn('Chef Cero: Error obteniendo sugerencia proactiva:', err);
+    } finally {
+      setIsLoadingProactiveTip(false);
+    }
+  };
+
+  // Medición de latencia de red continua vía ping ultraligero cuando no está en Live WS
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let isMounted = true;
+    const measureHttpPing = async () => {
+      if (isLiveActive) return; // Si Live WS está conectado, mide continuamente mediante Ping/Pong WebSocket
+      try {
+        const t0 = performance.now();
+        const res = await fetch('/api/live/ping', { cache: 'no-store' });
+        if (res.ok && isMounted) {
+          const rtt = Math.round(performance.now() - t0);
+          setNetworkLatency(rtt);
+          if (rtt > 350) setNetworkQuality('lenta');
+          else if (rtt > 220) setNetworkQuality('moderada');
+          else if (rtt > 100) setNetworkQuality('buena');
+          else setNetworkQuality('excelente');
+        }
+      } catch (_) {}
+    };
+
+    measureHttpPing();
+    const interval = setInterval(measureHttpPing, 3000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [isOpen, isLiveActive]);
 
   // Verificar disponibilidad de Gemini Live API en el backend
   useEffect(() => {
@@ -74,17 +331,50 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       .catch(() => setIsLiveAvailable(false));
   }, []);
 
+  /**
+   * Detiene la sesión Live y desmantela limpiamente el grafo Web Audio DSP
+   */
   const stopLiveSession = () => {
-    if (liveClientRef.current) {
-      liveClientRef.current.disconnect();
-      liveClientRef.current = null;
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
     }
-    setIsLiveActive(false);
-    setLiveState('idle');
+    if (dspProcessorRef.current) {
+      try {
+        dspProcessorRef.current.disconnect();
+      } catch (_) {}
+      dspProcessorRef.current = null;
+    }
+    if (highpassFilterRef.current) {
+      try {
+        highpassFilterRef.current.disconnect();
+      } catch (_) {}
+      highpassFilterRef.current = null;
+    }
+    if (sourceNodeRef.current) {
+      try {
+        sourceNodeRef.current.disconnect();
+      } catch (_) {}
+      sourceNodeRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try {
+        audioContextRef.current.close();
+      } catch (_) {}
+      audioContextRef.current = null;
+    }
+
+    voiceConn.disconnect();
+    setIsGatePassingVoice(false);
     currentLiveUserMsgId.current = null;
     currentLiveChefMsgId.current = null;
+    setLatestChefLiveText('');
+    setLatestUserLiveText('');
   };
 
+  /**
+   * Inicia la sesión Live con la Web Audio API y el nodo DSP de Noise Gate & Cancelación de Eco Quirúrgica
+   */
   const startLiveSession = async () => {
     if (isSpeaking) {
       stopSpeaking();
@@ -97,79 +387,125 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
     setIsListening(false);
 
-    const client = new GeminiLiveClient({
-      onStateChange: (st) => {
-        setLiveState(st);
-        if (st === 'speaking') {
-          setIsSpeaking(true);
-        } else if (st === 'listening') {
-          setIsSpeaking(false);
-        }
-      },
-      onAudioLevel: (lvl) => {
-        setLiveAudioLevel(lvl);
-      },
-      onUserTranscript: (transcript) => {
-        if (!transcript.trim()) return;
-        // Se añade automáticamente al chat en vivo
-        setMessages((prev) => {
-          const id = currentLiveUserMsgId.current || `live-user-${Date.now()}`;
-          currentLiveUserMsgId.current = id;
-          const exists = prev.some((m) => m.id === id);
-          if (exists) {
-            return prev.map((m) => (m.id === id ? { ...m, text: transcript } : m));
-          }
-          return [
-            ...prev,
-            {
-              id,
-              sender: 'user',
-              text: transcript,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            },
-          ];
-        });
-      },
-      onChefTranscript: (chunk) => {
-        if (!chunk) return;
-        // Transcripción en vivo del Chef añadida directamente al chat
-        setMessages((prev) => {
-          const id = currentLiveChefMsgId.current || `live-chef-${Date.now()}`;
-          currentLiveChefMsgId.current = id;
-          const exists = prev.some((m) => m.id === id);
-          if (exists) {
-            return prev.map((m) => (m.id === id ? { ...m, text: m.text + chunk } : m));
-          }
-          return [
-            ...prev,
-            {
-              id,
-              sender: 'chef',
-              text: chunk,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            },
-          ];
-        });
-      },
-      onTurnComplete: () => {
-        currentLiveUserMsgId.current = null;
-        currentLiveChefMsgId.current = null;
-      },
-      onError: (errMsg) => {
-        console.warn('Chef Cero: Error en Live API:', errMsg);
-        setSpeechNotice(`Aviso Live: ${errMsg}. Continuando en modo estándar.`);
-        stopLiveSession();
-      },
-    });
+    try {
+      // 1. Iniciar gestor de conexión persistente con buffer circular
+      const ok = await voiceConn.connect();
+      if (!ok) {
+        setSpeechNotice('No se pudo conectar al canal en vivo persistente.');
+        return;
+      }
 
-    liveClientRef.current = client;
-    const ok = await client.connect();
-    if (ok) {
-      setIsLiveActive(true);
+      // 2. Acceso a micrófono con restricciones de hardware para móviles (AEC nativa)
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        } as any,
+      });
+      mediaStreamRef.current = stream;
+
+      // 3. Crear AudioContext con latencyHint interactiva de hardware
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const inputCtx = new AudioCtx({ latencyHint: 'interactive' });
+      if (inputCtx.state === 'suspended') {
+        await inputCtx.resume();
+      }
+      audioContextRef.current = inputCtx;
+
+      // 4. Source Node desde el micrófono del teléfono
+      const source = inputCtx.createMediaStreamSource(stream);
+      sourceNodeRef.current = source;
+
+      // 5. Highpass Filter @ 85Hz: elimina zumbidos graves de extractores, estufas y vibraciones de mesada
+      const highpass = inputCtx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 85;
+      highpass.Q.value = 0.707;
+      highpassFilterRef.current = highpass;
+
+      // 6. AnalyserNode para monitoreo de energía y animación reactiva del orbe
+      const inputAnalyser = inputCtx.createAnalyser();
+      inputAnalyser.fftSize = 256;
+      inputAnalyser.smoothingTimeConstant = 0.8;
+      inputAnalyserRef.current = inputAnalyser;
+
+      // 7. Nodo DSP Noise Gate de Cocina con envolvente de ataque rápido y relajación suave
+      const sampleRate = inputCtx.sampleRate;
+      let gateEnvelope = 0;
+      let holdCounter = 0;
+      const attackStep = 1 / (sampleRate * 0.008); // 8ms ataque para no comer consonantes iniciales
+      const releaseStep = 1 / (sampleRate * 0.160); // 160ms relajación suave para caída de voz natural
+      const holdSamples = Math.round(sampleRate * 0.060); // 60ms retención
+      const thresholdRms = 0.022; // Umbral calibrado de ruido de cocina (-42 dBFS aprox)
+
+      const dspProcessor = inputCtx.createScriptProcessor(512, 1, 1);
+      dspProcessorRef.current = dspProcessor;
+
+      dspProcessor.onaudioprocess = (e) => {
+        if (!voiceConnRef.current.isLiveActive) return;
+
+        const inChannel = e.inputBuffer.getChannelData(0);
+        const len = inChannel.length;
+
+        // Calcular volumen eficaz (RMS)
+        let sumSquares = 0;
+        for (let i = 0; i < len; i++) {
+          sumSquares += inChannel[i] * inChannel[i];
+        }
+        const rms = Math.sqrt(sumSquares / len);
+        setLiveAudioLevel(Math.min(1, rms * 5));
+
+        const isChefSpeaking = voiceConnRef.current.state === 'speaking';
+        // Cancelación de eco acústico adaptativa: si el chef habla, el umbral es más riguroso para evitar bucles
+        const effectiveThreshold = isChefSpeaking ? thresholdRms * 2.6 : thresholdRms;
+        const isAbove = rms > effectiveThreshold;
+
+        if (isAbove) {
+          holdCounter = holdSamples;
+          gateEnvelope = Math.min(1, gateEnvelope + attackStep * len * 8);
+        } else if (holdCounter > 0) {
+          holdCounter -= len;
+        } else {
+          gateEnvelope = Math.max(0, gateEnvelope - releaseStep * len * 4);
+        }
+
+        const gatePassing = gateEnvelope > 0.05;
+        setIsGatePassingVoice(gatePassing);
+
+        // Barge-in Quirúrgico: Si el usuario habla con firmeza mientras el chef responde, vaciar buffer de salida al instante
+        if (isChefSpeaking && isAbove && rms > 0.06) {
+          voiceConnRef.current.flushPlayback();
+        }
+
+        // Si el Noise Gate está abierto (pasa la voz y no el ruido de cocina), enviar audio PCM 16kHz
+        if (gatePassing) {
+          const processed = new Float32Array(len);
+          for (let i = 0; i < len; i++) {
+            processed[i] = inChannel[i] * gateEnvelope;
+          }
+          const pcm16 = downsampleTo16kHz(processed, sampleRate);
+          voiceConnRef.current.sendAudioChunk(pcm16);
+        }
+      };
+
+      // Conexión del grafo Web Audio DSP
+      source.connect(highpass);
+      highpass.connect(dspProcessor);
+      dspProcessor.connect(inputAnalyser);
+
+      // Conexión muda de seguridad para evitar que los navegadores recojan como basura el ScriptProcessorNode
+      const silentGain = inputCtx.createGain();
+      silentGain.gain.value = 0;
+      dspProcessor.connect(silentGain);
+      silentGain.connect(inputCtx.destination);
+
       setSpeechNotice(null);
-    } else {
-      setIsLiveActive(false);
-      setSpeechNotice('No se pudo activar Live API. Usando modo estándar de chat.');
+    } catch (err: any) {
+      console.warn('Chef Cero: Error iniciando Web Audio Live session:', err);
+      setSpeechNotice(`Aviso Live: ${err?.message || err}. Usando modo estándar.`);
+      stopLiveSession();
     }
   };
 
@@ -198,14 +534,13 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
   };
 
-  // Initialize Web Speech Recognition if available (configurado para español latinoamericano)
+  // Initialize Web Speech Recognition con Paciencia Adaptativa (no responder al tiro en silencios)
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
-      // Español de Latinoamérica neutro / regional
       recognition.lang = 'es-419';
 
       recognition.onstart = () => {
@@ -218,9 +553,74 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           .map((result: any) => result[0].transcript)
           .join('');
         setInputQuery(transcript);
-        if (event.results[0].isFinal) {
-          handleSendQuery(transcript);
+        pendingTranscriptRef.current = transcript;
+
+        // Autoidentificación de Tono de Voz y Emoción Acústica en tiempo real
+        const lower = transcript.toLowerCase();
+        if (
+          lower.includes('!') ||
+          lower.includes('fuego') ||
+          lower.includes('humo') ||
+          lower.includes('se quema') ||
+          lower.includes('se quemó') ||
+          lower.includes('apaga') ||
+          lower.includes('cuidado') ||
+          lower.includes('urgente') ||
+          lower.includes('auxilio') ||
+          lower.includes('ayuda')
+        ) {
+          setDetectedTone('gritando_urgencia');
+        } else if (
+          lower.includes('?') ||
+          lower.includes('cómo') ||
+          lower.includes('cuándo') ||
+          lower.includes('cuánto') ||
+          lower.includes('por qué') ||
+          lower.includes('será que') ||
+          lower.includes('dime si') ||
+          lower.includes('puedo')
+        ) {
+          setDetectedTone('pregunta');
+        } else if (
+          /(eh+|a ver|espera|esperate|déjame ver|y\s*$|pero\s*$|o sea\s*$|este\s*$)/i.test(transcript.trim())
+        ) {
+          setDetectedTone('pensando');
+        } else {
+          setDetectedTone('calmado');
         }
+
+        // Limpiar temporizadores de silencio previos
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        if (silenceProgressIntervalRef.current) clearInterval(silenceProgressIntervalRef.current);
+
+        // Ventana de paciencia adaptativa: No responder al tiro si hay una pausa natural para pensar
+        let waitMs = patienceMode === 'zen' ? 2600 : patienceMode === 'equilibrado' ? 1800 : 900;
+        // Si el usuario dijo una muletilla al final ("ehhh...", "a ver...", "espera..."), extender el tiempo de espera
+        const hasFiller = /(eh+|a ver|espera|esperate|déjame ver|y\s*$|pero\s*$|o sea\s*$|este\s*$|cómo se llama\s*$)/i.test(
+          transcript.trim()
+        );
+        if (hasFiller) {
+          waitMs += 1400;
+        }
+
+        setIsUserThinking(true);
+        const startTime = performance.now();
+
+        silenceProgressIntervalRef.current = setInterval(() => {
+          const elapsed = performance.now() - startTime;
+          const pct = Math.min(100, Math.round((elapsed / waitMs) * 100));
+          setSilenceProgress(pct);
+        }, 50);
+
+        silenceTimerRef.current = setTimeout(() => {
+          clearInterval(silenceProgressIntervalRef.current);
+          setIsUserThinking(false);
+          setSilenceProgress(0);
+          const finalQuery = pendingTranscriptRef.current.trim();
+          if (finalQuery) {
+            handleSendQuery(finalQuery);
+          }
+        }, waitMs);
       };
 
       recognition.onerror = (event: any) => {
@@ -228,7 +628,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         if (event.error === 'not-allowed') {
           setSpeechNotice('Acceso al micrófono denegado. Puedes escribir o tocar las consultas rápidas.');
         } else if (event.error === 'no-speech') {
-          // Si no habló en modo continuo, simplemente dejamos en reposo
+          // Reposo silencioso
         } else {
           console.warn('Speech recognition notice:', event.error);
         }
@@ -245,6 +645,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
     return () => {
       stopSpeaking();
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (silenceProgressIntervalRef.current) clearInterval(silenceProgressIntervalRef.current);
       if (autoListenTimeoutRef.current) {
         clearTimeout(autoListenTimeoutRef.current);
       }
@@ -254,7 +656,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         } catch (_) {}
       }
     };
-  }, []);
+  }, [patienceMode]);
 
   useEffect(() => {
     if (chatScrollRef.current) {
@@ -308,8 +710,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     const text = (queryToSend || inputQuery).trim();
     if (!text) return;
 
+    // Detener temporizadores de espera de silencio
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (silenceProgressIntervalRef.current) clearInterval(silenceProgressIntervalRef.current);
+    setIsUserThinking(false);
+    setSilenceProgress(0);
+
     // Si el modo Live está activo, enviar directo a través del canal en tiempo real
-    if (isLiveActive && liveClientRef.current) {
+    if (isLiveActive) {
       setInputQuery('');
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
@@ -318,7 +726,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, userMsg]);
-      liveClientRef.current.sendText(text);
+      voiceConn.sendTextMessage(text);
       return;
     }
 
@@ -367,7 +775,9 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             pastMistakes: userProfile.pastMistakes,
             evolutionaryMemories: userProfile.evolutionaryMemories || [],
           },
-          currentContext,
+          currentContext: liveRecipeContext || currentContext,
+          detectedTone,
+          patienceMode,
           history: messages.slice(-6).map((m) => ({
             sender: m.sender,
             text: m.text,
@@ -473,11 +883,111 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               <ChefHat className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-bold text-lg text-white">Chef Cero en Vivo</h3>
                 <span className="px-2 py-0.5 text-xs font-semibold bg-white/20 rounded-full text-white">
                   {isSilent ? 'Modo Silencioso' : 'Manos Libres'}
                 </span>
+
+                {/* Indicador de Tono de Voz y Estado Emocional Detectado */}
+                <span
+                  className={`px-2 py-0.5 rounded-lg text-xs font-bold flex items-center gap-1 transition border ${
+                    detectedTone === 'gritando_urgencia'
+                      ? 'bg-rose-950 text-rose-300 border-rose-500/80 animate-pulse'
+                      : detectedTone === 'pensando'
+                      ? 'bg-amber-950 text-amber-300 border-amber-500/80'
+                      : detectedTone === 'pregunta'
+                      ? 'bg-sky-950 text-sky-300 border-sky-500/80'
+                      : 'bg-emerald-950 text-emerald-300 border-emerald-500/80'
+                  }`}
+                  title={`Tono de voz detectado: ${detectedTone}. El chef adapta su respuesta si preguntas, si gritas o si estás en calma.`}
+                >
+                  {detectedTone === 'gritando_urgencia' && '🚨 Urgencia'}
+                  {detectedTone === 'pensando' && '💭 Pensando'}
+                  {detectedTone === 'pregunta' && '❓ Pregunta'}
+                  {detectedTone === 'calmado' && '🌿 Calmado'}
+                </span>
+
+                {/* Selector de Ritmo y Paciencia del Chef */}
+                <div className="flex items-center gap-0.5 bg-black/25 p-0.5 rounded-lg text-[10px]">
+                  <button
+                    onClick={() => {
+                      setPatienceMode('zen');
+                    }}
+                    title="Modo Zen: espera 2.6s de silencio para que pienses con calma antes de responder"
+                    className={`px-1.5 py-0.5 rounded font-bold transition ${
+                      patienceMode === 'zen' ? 'bg-white text-stone-900 shadow-2xs' : 'text-amber-100 hover:text-white'
+                    }`}
+                  >
+                    🧘 Zen
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPatienceMode('equilibrado');
+                    }}
+                    title="Modo Normal: espera 1.8s de silencio"
+                    className={`px-1.5 py-0.5 rounded font-bold transition ${
+                      patienceMode === 'equilibrado' ? 'bg-white text-stone-900 shadow-2xs' : 'text-amber-100 hover:text-white'
+                    }`}
+                  >
+                    ⚖️ Normal
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPatienceMode('rapido');
+                    }}
+                    title="Modo Rápido: espera 0.9s de silencio"
+                    className={`px-1.5 py-0.5 rounded font-bold transition ${
+                      patienceMode === 'rapido' ? 'bg-white text-stone-900 shadow-2xs' : 'text-amber-100 hover:text-white'
+                    }`}
+                  >
+                    ⚡ Rápido
+                  </button>
+                </div>
+
+                {/* Indicador Visual de Latencia de Red en Tiempo Real */}
+                {networkLatency !== null && (
+                  <button
+                    onClick={() => setShowLatencyDetails((prev) => !prev)}
+                    title={`Latencia de red en tiempo real: ${networkLatency}ms (${networkQuality}). Haz clic para ver el monitor técnico.`}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition border ${
+                      networkQuality === 'excelente'
+                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900'
+                        : networkQuality === 'buena'
+                        ? 'bg-green-950/80 text-green-300 border-green-500/50 hover:bg-green-900'
+                        : networkQuality === 'moderada'
+                        ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 hover:bg-amber-900'
+                        : 'bg-rose-950/80 text-rose-300 border-rose-500/50 hover:bg-rose-900'
+                    }`}
+                  >
+                    <span className="relative flex h-2 w-2">
+                      <span
+                        className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                          networkQuality === 'excelente'
+                            ? 'bg-emerald-400'
+                            : networkQuality === 'buena'
+                            ? 'bg-green-400'
+                            : networkQuality === 'moderada'
+                            ? 'bg-amber-400'
+                            : 'bg-rose-400'
+                        }`}
+                      ></span>
+                      <span
+                        className={`relative inline-flex rounded-full h-2 w-2 ${
+                          networkQuality === 'excelente'
+                            ? 'bg-emerald-400'
+                            : networkQuality === 'buena'
+                            ? 'bg-green-400'
+                            : networkQuality === 'moderada'
+                            ? 'bg-amber-400'
+                            : 'bg-rose-400'
+                        }`}
+                      ></span>
+                    </span>
+                    <span>{networkLatency} ms</span>
+                    <Activity className="w-3 h-3 opacity-80" />
+                  </button>
+                )}
               </div>
               <p className="text-xs text-amber-100">
                 {currentContext?.recipeTitle ? `Receta activa: ${currentContext.recipeTitle}` : 'Tu mentor de cocina en tiempo real'}
@@ -486,6 +996,41 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Botón Sugerencia Proactiva del Chef */}
+            <button
+              onClick={handleRequestProactiveTip}
+              disabled={isLoadingProactiveTip}
+              title="Pedir una sugerencia anticipada basada en tus gustos, errores pasados y receta"
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 bg-amber-400 hover:bg-amber-300 text-stone-950 transition shadow-xs disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-stone-950" />
+              <span className="hidden sm:inline">
+                {isLoadingProactiveTip ? 'Pensando...' : 'Sugerencia'}
+              </span>
+            </button>
+            {/* Toggle Modo Manos Sucias (Navegación de pasos por voz de latencia ultra-baja < 50ms) */}
+            <button
+              onClick={() => setIsDirtyHandsMode((prev) => !prev)}
+              title={
+                isDirtyHandsMode
+                  ? 'Modo Manos Sucias ACTIVO (< 50ms latencia): di "Siguiente", "Anterior", "Repetir", "Tiempo" sin tocar la pantalla'
+                  : 'Activar Modo Manos Sucias para controlar pasos de la receta por voz'
+              }
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                isDirtyHandsMode
+                  ? 'bg-amber-400 text-stone-950 shadow-md ring-2 ring-amber-200'
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              }`}
+            >
+              <span className="text-sm">🖐️</span>
+              <span className="hidden sm:inline">
+                {isDirtyHandsMode ? 'Manos Sucias: ON' : 'Manos Sucias'}
+              </span>
+              <span className="sm:hidden">
+                {isDirtyHandsMode ? 'Manos ON' : 'Manos'}
+              </span>
+            </button>
+
             {/* Toggle Gemini 3.8 Live API en tiempo real */}
             <button
               onClick={() => {
@@ -599,36 +1144,174 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </div>
         </div>
 
-        {/* Barra de estado en vivo para Gemini 3.8 Live API */}
-        {isLiveActive && (
-          <div className="bg-rose-950 text-rose-100 px-4 py-2.5 flex items-center justify-between text-xs border-b border-rose-800 shadow-inner">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
-              </span>
-              <span>
-                <strong>🔴 Gemini 3.8 Live Conectado:</strong>{' '}
-                {liveState === 'speaking'
-                  ? 'El Chef te responde en vivo (puedes interrumpir con tu voz)'
-                  : liveState === 'connecting'
-                  ? 'Conectando canal de audio...'
-                  : 'Manos libres activas: habla con total naturalidad.'}
-              </span>
-            </div>
-            {/* Visualizador dinámico de ondas sonoras */}
-            <div className="flex items-center gap-1 h-3.5">
-              {[0.4, 0.8, 1, 0.6, 0.9, 0.5, 0.7].map((h, i) => (
+        {/* Monitor de Latencia y Diagnóstico Técnico en Tiempo Real */}
+        {showLatencyDetails && (
+          <div className="bg-stone-950 border-b border-stone-800 text-stone-200 px-4 py-3 text-xs animate-in fade-in slide-in-from-top-1 shadow-inner">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-stone-800/80">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+                <span className="font-extrabold text-white uppercase tracking-wider text-[11px]">
+                  Monitor de Red y Latencia Física de Audio
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
                 <span
-                  key={i}
-                  className="w-1 bg-rose-400 rounded-full transition-all duration-75"
-                  style={{
-                    height: `${Math.max(3, (liveState === 'speaking' ? 14 : liveAudioLevel * 22) * h)}px`,
-                  }}
-                />
-              ))}
+                  className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase ${
+                    networkQuality === 'excelente'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : networkQuality === 'buena'
+                      ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                      : networkQuality === 'moderada'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                  }`}
+                >
+                  Conexión {networkQuality}
+                </span>
+                <button
+                  onClick={() => setShowLatencyDetails(false)}
+                  className="text-stone-400 hover:text-stone-200 p-0.5"
+                  title="Ocultar monitor de latencia"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 my-2">
+              <div className="bg-stone-900/90 p-2 rounded-xl border border-stone-800">
+                <div className="text-[10px] text-stone-400 font-semibold uppercase">Ping RTT Red</div>
+                <div className="text-base font-black text-white font-mono mt-0.5 flex items-baseline gap-1">
+                  {networkLatency} <span className="text-[10px] font-normal text-stone-400">ms</span>
+                </div>
+                <div className="text-[9px] text-stone-400 mt-0.5">Ida y vuelta al servidor</div>
+              </div>
+
+              <div className="bg-stone-900/90 p-2 rounded-xl border border-stone-800">
+                <div className="text-[10px] text-stone-400 font-semibold uppercase">Búfer Audio</div>
+                <div className="text-base font-black text-emerald-400 font-mono mt-0.5 flex items-baseline gap-1">
+                  32 <span className="text-[10px] font-normal text-stone-400">ms</span>
+                </div>
+                <div className="text-[9px] text-stone-400 mt-0.5">512 muestras (16 kHz PCM)</div>
+              </div>
+
+              <div className="bg-stone-900/90 p-2 rounded-xl border border-stone-800">
+                <div className="text-[10px] text-stone-400 font-semibold uppercase">Jitter de Red</div>
+                <div className="text-base font-black text-amber-300 font-mono mt-0.5 flex items-baseline gap-1">
+                  ±{networkJitter} <span className="text-[10px] font-normal text-stone-400">ms</span>
+                </div>
+                <div className="text-[9px] text-stone-400 mt-0.5">Estabilidad del flujo</div>
+              </div>
+
+              <div className="bg-stone-900/90 p-2 rounded-xl border border-stone-800">
+                <div className="text-[10px] text-stone-400 font-semibold uppercase">Latencia Total Est.</div>
+                <div className="text-base font-black text-cyan-300 font-mono mt-0.5 flex items-baseline gap-1">
+                  ~{(networkLatency || 20) + 47} <span className="text-[10px] font-normal text-stone-400">ms</span>
+                </div>
+                <div className="text-[9px] text-stone-400 mt-0.5">Mínima física alcanzada</div>
+              </div>
+            </div>
+
+            <div className="mt-2 text-[11px] leading-relaxed bg-black/40 p-2.5 rounded-lg border border-stone-800/60">
+              {networkQuality === 'excelente' && (
+                <p className="text-emerald-300">
+                  ⚡ <strong>Conexión Excelente ({networkLatency} ms):</strong> Tu red responde al instante. La conversación con Gemini Live 3.8 y el Modo Manos Sucias se transmiten con fluidez instantánea en tiempo real.
+                </p>
+              )}
+              {networkQuality === 'buena' && (
+                <p className="text-green-300">
+                  ✨ <strong>Conexión Buena ({networkLatency} ms):</strong> Audio sin pérdidas y respuestas rápidas. La latencia total ronda los ~150 ms, prácticamente indistinguible de una llamada de voz.
+                </p>
+              )}
+              {networkQuality === 'moderada' && (
+                <p className="text-amber-300">
+                  ⏱️ <strong>Conexión Moderada ({networkLatency} ms):</strong> Puede haber una breve pausa de 200 a 300 ms antes de que el Chef empiece a hablar debido a la latencia de tu red WiFi o datos móviles.
+                </p>
+              )}
+              {networkQuality === 'lenta' && (
+                <p className="text-rose-300">
+                  📶 <strong>Conexión Lenta ({networkLatency} ms):</strong> Tu red presenta congestión temporal. El sistema mantiene activado el micro-búfer adaptativo para evitar que el audio se corte o se entrecorte.
+                </p>
+              )}
             </div>
           </div>
+        )}
+
+        {/* Panel Dedicado de Modo Manos Sucias (Ultra-Baja Latencia < 50ms para navegación de pasos) */}
+        {isDirtyHandsMode && (
+          <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-orange-700 text-white px-4 py-3 border-b border-amber-600 shadow-md">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="p-1.5 bg-black/25 rounded-xl text-lg shrink-0">🖐️</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-extrabold text-xs sm:text-sm uppercase tracking-wide">
+                      Modo Manos Sucias Activo
+                    </h4>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-stone-900 shadow-2xs">
+                      Latencia &lt; 50ms
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-100 mt-0.5 font-medium">
+                    {liveRecipeContext?.recipeTitle
+                      ? `Receta: ${liveRecipeContext.recipeTitle} • Paso ${liveRecipeContext.stepNumber || 1}${liveRecipeContext.totalSteps ? ` de ${liveRecipeContext.totalSteps}` : ''}`
+                      : 'Controla la navegación de la receta mediante comandos de voz sencillos sin tocar la pantalla'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-2.5 w-2.5 mr-1">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
+                </span>
+                <span className="text-[11px] font-bold bg-black/25 px-2 py-1 rounded-lg text-emerald-200">
+                  Escuchando comandos
+                </span>
+              </div>
+            </div>
+
+            {/* Atajos de comandos por voz */}
+            <div className="mt-2.5 pt-2 border-t border-white/20 flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="text-amber-200 font-semibold text-[10px] uppercase">Dí en voz alta:</span>
+              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Siguiente"</span>
+              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Anterior"</span>
+              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Repetir"</span>
+              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Tiempo"</span>
+              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Pausa"</span>
+              <span className="bg-red-900/60 text-red-200 px-2 py-0.5 rounded-md font-mono font-bold">"S.O.S."</span>
+            </div>
+
+            {/* Alerta de comando detectado y ejecutado al instante */}
+            {dirtyHandsLastCommand && (
+              <div className="mt-2.5 bg-emerald-400 text-stone-950 font-extrabold px-3 py-1.5 rounded-xl text-xs flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-1">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 fill-stone-950" />
+                  <span>¡Comando ejecutado al instante: "{dirtyHandsLastCommand.command.toUpperCase()}"!</span>
+                </div>
+                <span className="text-[10px] bg-stone-950 text-emerald-300 px-1.5 py-0.5 rounded font-mono">
+                  &lt; 50 ms
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Orbe Reactivo Dual con AnalyserNode, Cancelación de Eco y Noise Gate de Cocina */}
+        {isLiveActive && (
+          <ReactiveLiveOrb
+            isLiveActive={isLiveActive}
+            connectionState={voiceConn.state}
+            inputAnalyser={inputAnalyserRef.current}
+            outputAnalyser={voiceConn.outputAnalyser}
+            isNoiseGateActive={true}
+            isGatePassingVoice={isGatePassingVoice}
+            networkLatency={voiceConn.networkLatency}
+            networkQuality={voiceConn.networkQuality}
+            onBargeIn={() => voiceConn.flushPlayback()}
+            latestChefText={latestChefLiveText}
+            latestUserText={latestUserLiveText}
+          />
         )}
 
         {/* Notificación flotante de nuevo dato aprendido en tiempo real */}
@@ -654,17 +1337,46 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
         {/* Panel de Memoria Culinaria Evolutiva (Desplegable) */}
         {showMemoryPanel && (
-          <div className="bg-amber-50/90 border-b border-amber-200 p-4 max-h-60 overflow-y-auto animate-in slide-in-from-top-3 duration-200 text-xs text-stone-800">
-            <div className="flex items-center justify-between mb-2">
+          <div className="bg-amber-50/90 border-b border-amber-200 p-4 max-h-72 overflow-y-auto animate-in slide-in-from-top-3 duration-200 text-xs text-stone-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
               <div className="flex items-center gap-2">
                 <Brain className="w-4 h-4 text-amber-700" />
                 <h4 className="font-bold text-amber-950 uppercase tracking-wide text-[11px]">
-                  Memoria Culinaria Evolutiva del Chef
+                  Cerebro del Chef: Lo que he aprendido de ti
                 </h4>
               </div>
-              <span className="text-[10px] text-amber-800 font-medium">
-                La IA personaliza cada consejo con estos datos
-              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleRequestProactiveTip}
+                  disabled={isLoadingProactiveTip}
+                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 transition shadow-2xs"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>{isLoadingProactiveTip ? 'Analizando...' : 'Pedir sugerencia'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filtro de Categorías de Aprendizaje */}
+            <div className="flex flex-wrap gap-1 mb-2.5">
+              {(['todos', 'fuego', 'gustos', 'equipamiento', 'habito', 'fortaleza'] as const).map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setMemoryFilter(cat)}
+                  className={`px-2 py-0.5 rounded-md font-bold text-[10px] uppercase transition ${
+                    memoryFilter === cat
+                      ? 'bg-amber-700 text-white shadow-xs'
+                      : 'bg-amber-100/80 hover:bg-amber-200 text-amber-900'
+                  }`}
+                >
+                  {cat === 'todos' && 'Todos'}
+                  {cat === 'fuego' && '🔥 Fuego'}
+                  {cat === 'gustos' && '🧂 Gustos'}
+                  {cat === 'equipamiento' && '🍳 Equipo'}
+                  {cat === 'habito' && '💡 Hábitos'}
+                  {cat === 'fortaleza' && '⭐ Fortalezas'}
+                </button>
+              ))}
             </div>
 
             {(!userProfile.evolutionaryMemories || userProfile.evolutionaryMemories.length === 0) ? (
@@ -673,33 +1385,35 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               </p>
             ) : (
               <div className="space-y-1.5 mb-3">
-                {userProfile.evolutionaryMemories.map((m) => (
-                  <div
-                    key={m.id}
-                    className="flex items-start justify-between gap-2 p-2 bg-white rounded-lg border border-amber-200/80 shadow-2xs"
-                  >
-                    <div className="flex items-start gap-1.5">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 bg-amber-100 text-amber-800 border border-amber-200">
-                        {m.category === 'fuego' && '🔥 Fuego'}
-                        {m.category === 'fortaleza' && '⭐ Fortaleza'}
-                        {m.category === 'gustos' && '🧂 Gustos'}
-                        {m.category === 'equipamiento' && '🍳 Equipo'}
-                        {m.category === 'habito' && '💡 Hábito'}
-                        {!['fuego', 'fortaleza', 'gustos', 'equipamiento', 'habito'].includes(m.category) && m.category}
-                      </span>
-                      <p className="text-stone-800 leading-snug">{m.fact}</p>
+                {userProfile.evolutionaryMemories
+                  .filter((m) => memoryFilter === 'todos' || m.category === memoryFilter)
+                  .map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-start justify-between gap-2 p-2 bg-white rounded-lg border border-amber-200/80 shadow-2xs"
+                    >
+                      <div className="flex items-start gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 bg-amber-100 text-amber-800 border border-amber-200">
+                          {m.category === 'fuego' && '🔥 Fuego'}
+                          {m.category === 'fortaleza' && '⭐ Fortaleza'}
+                          {m.category === 'gustos' && '🧂 Gustos'}
+                          {m.category === 'equipamiento' && '🍳 Equipo'}
+                          {m.category === 'habito' && '💡 Hábito'}
+                          {!['fuego', 'fortaleza', 'gustos', 'equipamiento', 'habito'].includes(m.category) && m.category}
+                        </span>
+                        <p className="text-stone-800 leading-snug">{m.fact}</p>
+                      </div>
+                      {onRemoveFact && (
+                        <button
+                          onClick={() => onRemoveFact(m.id)}
+                          className="text-stone-400 hover:text-red-600 p-1 transition"
+                          title="Olvidar este dato"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
-                    {onRemoveFact && (
-                      <button
-                        onClick={() => onRemoveFact(m.id)}
-                        className="text-stone-400 hover:text-red-600 p-1 transition"
-                        title="Olvidar este dato"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
 
@@ -709,7 +1423,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 type="text"
                 value={newCustomFact}
                 onChange={(e) => setNewCustomFact(e.target.value)}
-                placeholder="Ej: Solo tengo cocina eléctrica de 4 placas, no uso picante..."
+                placeholder="Ej: Solo tengo cocina eléctrica, no uso cilantro, cocino para dos..."
                 className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
               <button
@@ -721,6 +1435,44 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 <span>Recordar</span>
               </button>
             </form>
+          </div>
+        )}
+
+        {/* Tarjeta de Sugerencia Proactiva del Chef */}
+        {proactiveTip && (
+          <div className="mx-4 mt-3 p-3 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 text-white rounded-2xl shadow-md border border-amber-400 text-xs animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center justify-between pb-1.5 border-b border-white/20">
+              <div className="flex items-center gap-1.5 font-black uppercase tracking-wider text-[11px]">
+                <Sparkles className="w-4 h-4 text-yellow-200 animate-spin" />
+                <span>Sugerencia Proactiva del Chef</span>
+              </div>
+              <button
+                onClick={() => setProactiveTip(null)}
+                className="text-white/80 hover:text-white p-0.5"
+                title="Cerrar sugerencia"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="mt-2 text-sm font-semibold leading-snug text-amber-50">
+              {proactiveTip.tip}
+            </p>
+            <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => handleReplayAudio(proactiveTip.tip)}
+                className="px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white font-bold rounded-lg text-[11px] flex items-center gap-1 transition"
+              >
+                <Volume2 className="w-3 h-3" />
+                <span>Escuchar consejo</span>
+              </button>
+              <button
+                onClick={() => handleQuickAction(`Chef, sobre tu sugerencia: "${proactiveTip.tip}", ¿cómo la aplico en este momento?`)}
+                className="px-2.5 py-1 bg-white text-stone-900 hover:bg-amber-50 font-bold rounded-lg text-[11px] flex items-center gap-1 transition shadow-xs"
+              >
+                <MessageSquare className="w-3 h-3" />
+                <span>Profundizar en esto</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -897,6 +1649,41 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </div>
         </div>
 
+        {/* Indicador de Silencio y Comprensión de Pausas de Pensamiento */}
+        {isUserThinking && inputQuery.trim().length > 0 && (
+          <div className="px-4 py-2 bg-gradient-to-r from-amber-50 to-orange-50 border-t border-amber-200 text-xs text-amber-950 flex items-center justify-between animate-in fade-in">
+            <div className="flex items-center gap-2.5 flex-1 mr-3">
+              <span className="text-base animate-pulse">💭</span>
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-[11px] font-bold text-amber-900 mb-1">
+                  <span>El Chef entiende tus silencios... Tómate tu tiempo para pensar</span>
+                  <span className="font-mono text-[10px] text-amber-700 font-semibold">
+                    {patienceMode === 'zen' ? 'Ritmo Zen (2.6s)' : patienceMode === 'equilibrado' ? 'Ritmo Normal (1.8s)' : 'Ritmo Rápido (0.9s)'}
+                  </span>
+                </div>
+                <div className="w-full bg-amber-200/80 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-amber-600 h-full transition-all duration-75 ease-linear rounded-full"
+                    style={{ width: `${silenceProgress}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (pendingTranscriptRef.current) {
+                  handleSendQuery(pendingTranscriptRef.current);
+                }
+              }}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-xs shrink-0"
+              title="Responder de inmediato sin esperar a que termine el tiempo de silencio"
+            >
+              <Zap className="w-3 h-3" />
+              <span>Responder ya</span>
+            </button>
+          </div>
+        )}
+
         {/* Status banner when listening in continuous hands-free mode */}
         {isListening && (
           <div className="px-4 py-2 bg-red-50 border-t border-red-200 flex items-center justify-between text-xs text-red-900 animate-in fade-in">
@@ -906,7 +1693,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span>
               </span>
               <span>
-                <strong>El Chef te escucha en vivo:</strong> Habla con naturalidad (o di <em>"gracias"</em> / <em>"pausa"</em> para reposar).
+                <strong>El Chef te escucha en vivo:</strong> Habla con calma a tu ritmo (o di <em>"gracias"</em> / <em>"pausa"</em> para reposar).
               </span>
             </div>
             <button

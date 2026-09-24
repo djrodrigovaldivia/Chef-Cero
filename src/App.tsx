@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile } from './types';
+import { Recipe, UserProfile } from './types';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { CookingMode } from './components/CookingMode';
+import { SimpleModeView } from './components/SimpleModeView';
+import { FridgeScannerModal } from './components/FridgeScannerModal';
+import { TechniquesShowcaseModal } from './components/TechniquesShowcaseModal';
 import { VisualDictionary } from './components/VisualDictionary';
 import { KitchenStorageMap } from './components/KitchenStorageMap';
 import { ChefNotebook } from './components/ChefNotebook';
@@ -104,9 +107,15 @@ const INITIAL_PROFILE: UserProfile = {
 };
 
 export default function App() {
+  const [appMode, setAppMode] = useState<'simple' | 'complete'>(() => {
+    return (localStorage.getItem('chef_cero_mode_preference') as 'simple' | 'complete') || 'simple';
+  });
+  const [selectedRecipeForCooking, setSelectedRecipeForCooking] = useState<Recipe | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('cocinar');
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [isShoppingListOpen, setIsShoppingListOpen] = useState(false);
+  const [isFridgeScannerOpen, setIsFridgeScannerOpen] = useState(false);
+  const [isTechniquesOpen, setIsTechniquesOpen] = useState(false);
   const [voiceContext, setVoiceContext] = useState<{
     recipeTitle?: string;
     stepNumber?: number;
@@ -114,6 +123,13 @@ export default function App() {
     heatLevel?: string;
   } | undefined>(undefined);
   const [incomingTimer, setIncomingTimer] = useState<{ seconds: number; label: string } | null>(null);
+
+  const handleToggleAppMode = (mode: 'simple' | 'complete') => {
+    setAppMode(mode);
+    try {
+      localStorage.setItem('chef_cero_mode_preference', mode);
+    } catch (_) {}
+  };
 
   const handleVoiceAddTimer = (seconds: number, label: string) => {
     setActiveTab('cocinar');
@@ -211,6 +227,8 @@ export default function App() {
     <div className="min-h-screen bg-stone-100/70 text-stone-900 flex flex-col font-sans">
       {/* Top Navbar */}
       <Navbar
+        appMode={appMode}
+        onToggleAppMode={handleToggleAppMode}
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         onOpenVoiceAssistant={() => {
@@ -218,35 +236,77 @@ export default function App() {
           setIsVoiceOpen(true);
         }}
         onOpenShoppingList={() => setIsShoppingListOpen(true)}
+        onOpenFridgeScanner={() => setIsFridgeScannerOpen(true)}
+        onOpenTechniques={() => setIsTechniquesOpen(true)}
         userProfile={userProfile}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {activeTab === 'cocinar' && (
-          <CookingMode
+        {appMode === 'simple' && (
+          <SimpleModeView
             userProfile={userProfile}
-            onUpdateProfile={handleUpdateProfile}
-            onOpenVoiceAssistantWithContext={handleOpenVoiceWithContext}
-            incomingTimer={incomingTimer}
-            onClearIncomingTimer={() => setIncomingTimer(null)}
-            onLearnFact={handleLearnFact}
+            onSelectRecipe={(recipe) => {
+              setSelectedRecipeForCooking(recipe);
+              setAppMode('complete');
+              setActiveTab('cocinar');
+            }}
+            onOpenVoice={() => {
+              setVoiceContext(undefined);
+              setIsVoiceOpen(true);
+            }}
+            onOpenEmergency={() => {
+              setVoiceContext({
+                recipeTitle: 'Emergencia en sartén',
+                stepNumber: 1,
+                stepInstruction: 'Auxilio rápido: comida pegada, humo o fuego alto',
+                heatLevel: 'alto',
+              });
+              setIsVoiceOpen(true);
+            }}
+            onOpenLeftovers={() => {
+              setAppMode('complete');
+              setActiveTab('sobras');
+            }}
+            onSwitchToComplete={() => {
+              setAppMode('complete');
+              setActiveTab('cocinar');
+            }}
+            onOpenScanner={() => setIsFridgeScannerOpen(true)}
+            onOpenTechniques={() => setIsTechniquesOpen(true)}
           />
         )}
 
-        {activeTab === 'sobras' && <LeftoversRescueTab />}
+        {appMode === 'complete' && (
+          <>
+            {activeTab === 'cocinar' && (
+              <CookingMode
+                userProfile={userProfile}
+                onUpdateProfile={handleUpdateProfile}
+                onOpenVoiceAssistantWithContext={handleOpenVoiceWithContext}
+                incomingTimer={incomingTimer}
+                onClearIncomingTimer={() => setIncomingTimer(null)}
+                onLearnFact={handleLearnFact}
+                externalSelectedRecipe={selectedRecipeForCooking}
+                onRecipeConsumed={() => setSelectedRecipeForCooking(null)}
+              />
+            )}
 
-        {activeTab === 'diccionario' && <VisualDictionary />}
+            {activeTab === 'sobras' && <LeftoversRescueTab />}
 
-        {activeTab === 'mapa' && <KitchenStorageMap />}
+            {activeTab === 'diccionario' && <VisualDictionary />}
 
-        {activeTab === 'cuaderno' && (
-          <ChefNotebook
-            userProfile={userProfile}
-            onUpdateProfile={handleUpdateProfile}
-            onLearnFact={handleLearnFact}
-            onRemoveFact={handleRemoveFact}
-          />
+            {activeTab === 'mapa' && <KitchenStorageMap />}
+
+            {activeTab === 'cuaderno' && (
+              <ChefNotebook
+                userProfile={userProfile}
+                onUpdateProfile={handleUpdateProfile}
+                onLearnFact={handleLearnFact}
+                onRemoveFact={handleRemoveFact}
+              />
+            )}
+          </>
         )}
       </main>
 
@@ -293,6 +353,23 @@ export default function App() {
       <ShoppingListModal
         isOpen={isShoppingListOpen}
         onClose={() => setIsShoppingListOpen(false)}
+      />
+
+      {/* Escáner de Nevera con Cámara Multimodal */}
+      <FridgeScannerModal
+        isOpen={isFridgeScannerOpen}
+        onClose={() => setIsFridgeScannerOpen(false)}
+        onStartCookingRecipe={(recipe) => {
+          setSelectedRecipeForCooking(recipe);
+          setAppMode('complete');
+          setActiveTab('cocinar');
+        }}
+      />
+
+      {/* Micro-Demostraciones Sensoriales de Técnicas */}
+      <TechniquesShowcaseModal
+        isOpen={isTechniquesOpen}
+        onClose={() => setIsTechniquesOpen(false)}
       />
 
       {/* Indicador de Estado Sin Conexión (Caché Offline activa) */}

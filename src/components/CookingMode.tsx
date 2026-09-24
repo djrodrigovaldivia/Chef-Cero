@@ -36,6 +36,7 @@ import {
 } from '../utils/notifications';
 import { setupWakeLockAutoRefresh, isWakeLockSupported } from '../utils/wakeLock';
 import { CookingEmergencyModal } from './CookingEmergencyModal';
+import { FloatingTimerIsland } from './FloatingTimerIsland';
 
 interface CookingModeProps {
   userProfile: UserProfile;
@@ -49,6 +50,8 @@ interface CookingModeProps {
   incomingTimer?: { seconds: number; label: string } | null;
   onClearIncomingTimer?: () => void;
   onLearnFact?: (category: 'fuego' | 'gustos' | 'equipamiento' | 'habito' | 'fortaleza', fact: string) => void;
+  externalSelectedRecipe?: Recipe | null;
+  onRecipeConsumed?: () => void;
 }
 
 export const CookingMode: React.FC<CookingModeProps> = ({
@@ -58,11 +61,23 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   incomingTimer,
   onClearIncomingTimer,
   onLearnFact,
+  externalSelectedRecipe,
+  onRecipeConsumed,
 }) => {
   const [recipesList, setRecipesList] = useState<Recipe[]>(STARTER_RECIPES);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe>(STARTER_RECIPES[0]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [miseEnPlaceChecked, setMiseEnPlaceChecked] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (externalSelectedRecipe) {
+      setSelectedRecipe(externalSelectedRecipe);
+      setCurrentStepIndex(0);
+      setMiseEnPlaceChecked({});
+      setCookingStage('mise');
+      if (onRecipeConsumed) onRecipeConsumed();
+    }
+  }, [externalSelectedRecipe, onRecipeConsumed]);
 
   // World Cuisines and Budget Filtering
   const [selectedCuisine, setSelectedCuisine] = useState<WorldCuisineId>('todas');
@@ -260,6 +275,68 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       listener.stop();
     };
   }, [isHandsFreeActive, currentStepIndex, selectedRecipe]);
+
+  // Listener para comandos de voz provenientes de Modo Manos Sucias en VoiceAssistantModal
+  useEffect(() => {
+    const handleRemoteStepCmd = (e: any) => {
+      const action = e.detail?.action;
+      if (!action) return;
+
+      if (action === 'next') {
+        if (currentStepIndex < selectedRecipe.steps.length - 1) {
+          setCurrentStepIndex((prev) => prev + 1);
+          speakSpanishText(`Paso ${currentStepIndex + 2}: ${selectedRecipe.steps[currentStepIndex + 1]?.title}`);
+        } else {
+          speakSpanishText('¡Has completado el último paso de la receta!');
+        }
+      } else if (action === 'prev') {
+        if (currentStepIndex > 0) {
+          setCurrentStepIndex((prev) => prev - 1);
+          speakSpanishText(`Paso ${currentStepIndex}: ${selectedRecipe.steps[currentStepIndex - 1]?.title}`);
+        }
+      } else if (action === 'repeat') {
+        const step = selectedRecipe.steps[currentStepIndex];
+        if (step) {
+          speakSpanishText(`Paso ${step.stepNumber}: ${step.title}. ${step.instruction}`);
+        }
+      } else if (action === 'timer') {
+        const step = selectedRecipe.steps[currentStepIndex];
+        if (step?.timerSeconds) {
+          handleStartTimer(step.timerSeconds, step.timerLabel || `Paso ${step.stepNumber}`, currentStepIndex);
+          speakSpanishText(`Temporizador de ${Math.round(step.timerSeconds / 60)} minutos iniciado.`);
+        } else {
+          speakSpanishText('Este paso no requiere temporizador fijo.');
+        }
+      } else if (action === 'pause') {
+        setActiveTimers((prev) => prev.map((t) => ({ ...t, isRunning: false })));
+        speakSpanishText('Temporizadores pausados.');
+      } else if (action === 'emergency') {
+        setIsEmergencyModalOpen(true);
+        speakSpanishText('Abriendo menú de emergencias culinarias de inmediato.');
+      }
+    };
+
+    window.addEventListener('chef-cero-step-cmd', handleRemoteStepCmd);
+    return () => window.removeEventListener('chef-cero-step-cmd', handleRemoteStepCmd);
+  }, [currentStepIndex, selectedRecipe]);
+
+  // Difundir contexto de la receta en curso para que el VoiceAssistantModal y Modo Manos Sucias lo tengan al instante
+  useEffect(() => {
+    const step = selectedRecipe.steps[currentStepIndex];
+    window.dispatchEvent(
+      new CustomEvent('chef-cero-recipe-context', {
+        detail: {
+          recipeTitle: selectedRecipe.title,
+          stepNumber: step?.stepNumber ?? currentStepIndex + 1,
+          totalSteps: selectedRecipe.steps.length,
+          stepTitle: step?.title,
+          stepInstruction: step?.instruction,
+          heatLevel: step?.heatLevel,
+          timerSeconds: step?.timerSeconds,
+        },
+      })
+    );
+  }, [currentStepIndex, selectedRecipe]);
 
   // Inicializar Service Worker y verificar soporte de Notificaciones al montar
   useEffect(() => {
@@ -803,6 +880,14 @@ export const CookingMode: React.FC<CookingModeProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Dynamic Island Flotante de Temporizadores Múltiples */}
+      <FloatingTimerIsland
+        activeTimers={activeTimers}
+        onTogglePause={toggleTimerPause}
+        onRemoveTimer={removeTimer}
+        onResetTimer={resetTimer}
+      />
+
       {/* Selector Principal de Etapas (Flujo Claro y Sin Caos Visual) */}
       <div className="bg-white p-2 rounded-2xl border border-stone-200 shadow-xs flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 sm:gap-2">
         <button
@@ -868,110 +953,54 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       {/* ========================================================= */}
       {cookingStage === 'receta' && (
         <div className="space-y-6">
-          {/* Barra de Progreso y Nivel del Aprendiz ("Evolución Culinaria") */}
-          <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-100/40 p-4 sm:p-5 rounded-2xl border border-amber-200/90 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-amber-600 text-white flex items-center justify-center text-2xl shadow-sm shrink-0">
-                  {currentLevelMeta.badge}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">Tu Nivel Culinario</span>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-950 font-mono">
-                      {userProfile.xp} XP
-                    </span>
-                  </div>
-                  <h3 className="text-base sm:text-lg font-black text-stone-900">
-                    {currentLevelMeta.title}
-                  </h3>
-                  <p className="text-xs text-stone-600 mt-0.5">
-                    {currentLevelMeta.tagline}
-                  </p>
-                </div>
+          {/* Tarjeta Unificada y Compacta de Nivel y Recomendación */}
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-xs p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center text-xl font-bold shrink-0 shadow-2xs">
+                {currentLevelMeta.badge}
               </div>
-
-              <div className="flex items-center gap-2 self-start sm:self-center">
-                <button
-                  onClick={() => setShowRoadmapModal(true)}
-                  className="px-3.5 py-2 rounded-xl bg-white hover:bg-stone-50 border border-amber-300 text-amber-950 text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
-                >
-                  <span>🗺️</span>
-                  <span>Ver Ruta de los 5 Niveles</span>
-                </button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-sm text-stone-900">
+                    {currentLevelMeta.title}
+                  </span>
+                  <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-full font-mono">
+                    {userProfile.xp} / {currentLevelMeta.targetXp} XP
+                  </span>
+                </div>
+                <div className="text-xs text-stone-500 mt-0.5 flex items-center gap-1.5">
+                  <span>💡 Recomendado:</span>
+                  <strong className="text-stone-800">
+                    {mentorRecommendation ? mentorRecommendation.headline : (recommendedRecipeObj ? recommendedRecipeObj.title.split('(')[0] : 'Arroz Blanco')}
+                  </strong>
+                </div>
               </div>
             </div>
 
-            {/* XP Progress Bar */}
-            <div className="mt-3.5 pt-3 border-t border-amber-200/60">
-              <div className="flex items-center justify-between text-xs text-stone-600 mb-1.5 font-medium">
-                <span>Progreso hacia {nextLevelMeta ? nextLevelMeta.shortTitle : 'Maestría Total'}</span>
-                <span className="font-mono font-bold text-stone-800">{userProfile.xp} / {currentLevelMeta.targetXp} XP</span>
-              </div>
-              <div className="w-full bg-stone-200/80 h-2.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-amber-500 to-orange-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, Math.max(8, (userProfile.xp / currentLevelMeta.targetXp) * 100))}%` }}
-                />
-              </div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-stone-500 mt-1.5 gap-1">
-                <span className="truncate">🎯 Habilidades actuales: {currentLevelMeta.unlockedTechniques.slice(0, 2).join(' • ')}</span>
-                {nextLevelMeta && (
-                  <span className="text-amber-800 font-semibold shrink-0">
-                    Próximo desbloqueo: Nivel {nextLevelMeta.level} a los {currentLevelMeta.targetXp} XP
-                  </span>
-                )}
-              </div>
+            <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+              <button
+                onClick={() => setShowRoadmapModal(true)}
+                className="px-3 py-2 rounded-xl text-stone-600 hover:text-stone-900 hover:bg-stone-100 text-xs font-semibold transition"
+              >
+                <span>🗺️ Ver Ruta</span>
+              </button>
+
+              {recommendedRecipeObj && (
+                <button
+                  onClick={() => {
+                    setSelectedRecipe(recommendedRecipeObj);
+                    setCurrentStepIndex(0);
+                    setMiseEnPlaceChecked({});
+                    window.scrollTo({ top: 380, behavior: 'smooth' });
+                  }}
+                  className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                >
+                  <span>Cocinar Ahora</span>
+                  <ChevronRight className="w-4 h-4 text-amber-400" />
+                </button>
+              )}
             </div>
           </div>
-
-          {/* Tarjeta de Recomendación Inteligente de la IA para tu Nivel */}
-          {mentorRecommendation && (
-            <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/90 border-2 border-amber-300/90 text-stone-900 shadow-xs">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-start gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 text-xl shadow-xs">
-                    💡
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wide">
-                        Recomendación Pedagógica del Chef Mentor
-                      </span>
-                      <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
-                        {mentorRecommendation.headline}
-                      </span>
-                    </div>
-                    <p className="text-xs sm:text-sm text-stone-800 font-medium leading-relaxed">
-                      "{mentorRecommendation.mentorReasoning}"
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-950">
-                      <span className="font-bold">🎯 Meta clave a desbloquear:</span>
-                      <span className="text-stone-700 bg-white/70 px-2 py-0.5 rounded-md border border-amber-200">
-                        {mentorRecommendation.learningFocus}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {recommendedRecipeObj && (
-                  <button
-                    onClick={() => {
-                      setSelectedRecipe(recommendedRecipeObj);
-                      setCurrentStepIndex(0);
-                      setMiseEnPlaceChecked({});
-                      window.scrollTo({ top: 380, behavior: 'smooth' });
-                    }}
-                    className="px-4 py-2.5 bg-stone-900 hover:bg-stone-800 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition shrink-0 shadow-sm cursor-pointer"
-                  >
-                    <span>{recommendedRecipeObj.countryFlag || '🍳'}</span>
-                    <span>Cocinar Ahora: {recommendedRecipeObj.title.split('(')[0]}</span>
-                    <ChevronRight className="w-4 h-4 text-amber-400" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Top Banner & Recipe Selector */}
           <div className="bg-gradient-to-r from-amber-600/10 via-orange-500/5 to-transparent p-6 rounded-2xl border border-stone-200">

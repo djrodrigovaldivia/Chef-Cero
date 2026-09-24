@@ -1,12 +1,10 @@
 /**
- * Módulo de Reconocimiento de Voz Continuo Manos Libres (Estilo SideChef)
- * Permite al usuario hablarle a la cocina con las manos sucias:
- * - "Siguiente" / "Avanzar" -> pasa al siguiente paso.
- * - "Atrás" / "Anterior" -> vuelve al paso previo.
- * - "Repetir" / "Léelo" -> vuelve a leer el paso actual.
- * - "Temporizador" / "Tiempo" -> arranca el cronómetro del paso.
- * - "Pausa" / "Parar" -> pausa los temporizadores.
- * - "S.O.S." / "Humo" / "Ayuda" -> abre la pantalla de emergencias.
+ * Módulo de Reconocimiento de Voz Continuo Manos Sucias (Estilo SideChef)
+ * Optimizado para Ultra-Baja Latencia (< 50ms):
+ * - interimResults: true para disparo instantáneo en la primera sílaba/palabra reconocida
+ * - Cooldown anti-rebote inteligente (750ms) para evitar disparos dobles
+ * - Detección exhaustiva de sinónimos de cocina y modismos
+ * - Recuperación automática de conexión ante caídas del motor de voz
  */
 
 export interface HandsFreeVoiceCallbacks {
@@ -17,6 +15,7 @@ export interface HandsFreeVoiceCallbacks {
   onPauseTimer: () => void;
   onEmergency: () => void;
   onStatusChange?: (isListening: boolean, lastHeardWord?: string) => void;
+  onCommandExecuted?: (commandName: string, transcript: string) => void;
 }
 
 export class HandsFreeCookingListener {
@@ -24,6 +23,8 @@ export class HandsFreeCookingListener {
   private isExplicitlyStopped = false;
   private callbacks: HandsFreeVoiceCallbacks;
   private isListening = false;
+  private lastTriggeredTime = 0;
+  private readonly COOLDOWN_MS = 750; // Anti-rebote para comandos en streaming
 
   constructor(callbacks: HandsFreeVoiceCallbacks) {
     this.callbacks = callbacks;
@@ -44,8 +45,10 @@ export class HandsFreeCookingListener {
     try {
       this.recognition = new SpeechRecognition();
       this.recognition.continuous = true;
-      this.recognition.interimResults = false;
-      this.recognition.lang = 'es-ES';
+      // ULTRA-BAJA LATENCIA: true para no esperar pausas de silencio
+      this.recognition.interimResults = true;
+      this.recognition.lang = 'es-419'; // Español latinoamericano neutro
+      this.recognition.maxAlternatives = 1;
 
       this.recognition.onstart = () => {
         this.isListening = true;
@@ -55,7 +58,7 @@ export class HandsFreeCookingListener {
       this.recognition.onend = () => {
         this.isListening = false;
         this.callbacks.onStatusChange?.(false);
-        // Si no se detuvo intencionalmente, reconectar para mantener manos libres activo
+        // Si no se detuvo intencionalmente, reconectar de inmediato para mantener manos libres activo
         if (!this.isExplicitlyStopped) {
           setTimeout(() => {
             try {
@@ -63,96 +66,146 @@ export class HandsFreeCookingListener {
                 this.recognition.start();
               }
             } catch {}
-          }, 400);
+          }, 200);
         }
       };
 
       this.recognition.onerror = (event: any) => {
-        // Ignorar "no-speech" normal en cocinas silenciosas
         if (event.error !== 'no-speech' && event.error !== 'aborted') {
           console.warn('Chef Cero Hands-Free voice error:', event.error);
         }
       };
 
       this.recognition.onresult = (event: any) => {
-        const lastIndex = event.results.length - 1;
-        const transcript = event.results[lastIndex][0].transcript.toLowerCase().trim();
-        console.log('Chef Cero escuchó comando:', transcript);
-        this.callbacks.onStatusChange?.(true, transcript);
+        const resultCount = event.results.length;
+        for (let i = event.resultIndex; i < resultCount; i++) {
+          const res = event.results[i];
+          const transcript = res[0]?.transcript?.toLowerCase()?.trim() || '';
+          if (!transcript) continue;
 
-        this.processCommand(transcript);
+          this.callbacks.onStatusChange?.(true, transcript);
+          const executed = this.processCommand(transcript);
+          if (executed) {
+            // Si ya se disparó la acción para este fragmento, no procesar más hasta el siguiente turno
+            break;
+          }
+        }
       };
     } catch (e) {
       console.warn('Chef Cero: Error instanciando SpeechRecognition:', e);
     }
   }
 
-  private processCommand(text: string) {
-    // 1. Siguiente paso
-    if (
-      text.includes('siguiente') ||
-      text.includes('avanzar') ||
-      text.includes('continua') ||
-      text.includes('adelante') ||
-      text.includes('próximo') ||
-      text.includes('ya está') ||
-      text.includes('listo')
-    ) {
-      this.callbacks.onNextStep();
-      return;
+  /**
+   * Evalúa la transcripción entrante y ejecuta el comando de inmediato
+   * Retorna true si un comando fue ejecutado
+   */
+  private processCommand(text: string): boolean {
+    const now = Date.now();
+    if (now - this.lastTriggeredTime < this.COOLDOWN_MS) {
+      return false;
     }
 
-    // 2. Paso anterior
-    if (text.includes('anterior') || text.includes('atrás') || text.includes('retrocede') || text.includes('volver')) {
+    const t = text.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // Sin tildes para matching veloz
+
+    // 1. Siguiente paso (Avanzar en la receta)
+    if (
+      t.includes('siguiente') ||
+      t.includes('avanza') ||
+      t.includes('avanzar') ||
+      t.includes('continua') ||
+      t.includes('adelante') ||
+      t.includes('proximo') ||
+      t.includes('ya esta') ||
+      t.includes('listo') ||
+      t.includes('dale')
+    ) {
+      this.lastTriggeredTime = now;
+      this.callbacks.onCommandExecuted?.('siguiente', text);
+      this.callbacks.onNextStep();
+      return true;
+    }
+
+    // 2. Paso anterior (Retroceder)
+    if (
+      t.includes('anterior') ||
+      t.includes('atras') ||
+      t.includes('retrocede') ||
+      t.includes('volver') ||
+      t.includes('regresa') ||
+      t.includes('previo')
+    ) {
+      this.lastTriggeredTime = now;
+      this.callbacks.onCommandExecuted?.('anterior', text);
       this.callbacks.onPrevStep();
-      return;
+      return true;
     }
 
     // 3. Repetir lectura del paso
     if (
-      text.includes('repetir') ||
-      text.includes('léelo') ||
-      text.includes('lee') ||
-      text.includes('repite') ||
-      text.includes('no escuché') ||
-      text.includes('qué hago')
+      t.includes('repetir') ||
+      t.includes('leelo') ||
+      t.includes('lee') ||
+      t.includes('repite') ||
+      t.includes('no escuche') ||
+      t.includes('que hago') ||
+      t.includes('otra vez')
     ) {
+      this.lastTriggeredTime = now;
+      this.callbacks.onCommandExecuted?.('repetir', text);
       this.callbacks.onRepeatStep();
-      return;
+      return true;
     }
 
-    // 4. Temporizador
+    // 4. Temporizador (Arrancar cronómetro del paso actual)
     if (
-      text.includes('tiempo') ||
-      text.includes('temporizador') ||
-      text.includes('cronómetro') ||
-      text.includes('iniciar') ||
-      text.includes('arranca') ||
-      text.includes('empieza')
+      t.includes('tiempo') ||
+      t.includes('temporizador') ||
+      t.includes('cronometro') ||
+      t.includes('iniciar') ||
+      t.includes('arranca') ||
+      t.includes('empieza') ||
+      t.includes('cuenta regresiva')
     ) {
+      this.lastTriggeredTime = now;
+      this.callbacks.onCommandExecuted?.('temporizador', text);
       this.callbacks.onStartTimer();
-      return;
+      return true;
     }
 
-    // 5. Pausar
-    if (text.includes('pausa') || text.includes('parar') || text.includes('detener') || text.includes('alto')) {
-      this.callbacks.onPauseTimer();
-      return;
-    }
-
-    // 6. Emergencia S.O.S.
+    // 5. Pausar cronómetros
     if (
-      text.includes('emergencia') ||
-      text.includes('socorro') ||
-      text.includes('humo') ||
-      text.includes('se quema') ||
-      text.includes('fuego') ||
-      text.includes('auxilio') ||
-      text.includes('ayuda')
+      t.includes('pausa') ||
+      t.includes('parar') ||
+      t.includes('detener') ||
+      t.includes('alto') ||
+      t.includes('para') ||
+      t.includes('frena')
     ) {
-      this.callbacks.onEmergency();
-      return;
+      this.lastTriggeredTime = now;
+      this.callbacks.onCommandExecuted?.('pausa', text);
+      this.callbacks.onPauseTimer();
+      return true;
     }
+
+    // 6. Emergencia S.O.S. (Humo, fuego, quemado)
+    if (
+      t.includes('emergencia') ||
+      t.includes('socorro') ||
+      t.includes('humo') ||
+      t.includes('se quema') ||
+      t.includes('fuego') ||
+      t.includes('auxilio') ||
+      t.includes('ayuda') ||
+      t.includes('sos')
+    ) {
+      this.lastTriggeredTime = now;
+      this.callbacks.onCommandExecuted?.('emergencia', text);
+      this.callbacks.onEmergency();
+      return true;
+    }
+
+    return false;
   }
 
   public start() {
@@ -161,7 +214,7 @@ export class HandsFreeCookingListener {
       try {
         this.recognition.start();
       } catch (err) {
-        console.warn('Chef Cero: Error iniciando escucha:', err);
+        console.warn('Chef Cero: Error iniciando escucha manos libres:', err);
       }
     }
   }

@@ -398,7 +398,7 @@ app.post('/api/chat', async (req, res) => {
   };
 
   try {
-    const { message, userProfile, currentContext, history } = req.body;
+    const { message, userProfile, currentContext, history, detectedTone, patienceMode } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'Mensaje requerido' });
     }
@@ -418,6 +418,21 @@ app.post('/api/chat', async (req, res) => {
       ? userProfile.evolutionaryMemories.map((m: any) => `• [${m.category || 'general'}]: ${m.fact}`).join('\n')
       : 'El aprendiz recién está comenzando. Aún no tienes memorias previas registradas.';
 
+    let toneInstruction = '';
+    if (detectedTone === 'gritando_urgencia') {
+      toneInstruction = `ESTADO DE ALERTA: EL USUARIO ESTÁ GRITANDO O EN MÁXIMA URGENCIA (humo, fuego, quemadura, desborde).
+- Responde de forma ULTRA DIRECTA, CONCISA (1 o 2 oraciones máximo) y TRANQUILIZADORA.
+- Si hay peligro, ordena con amabilidad y firmeza: "¡APAGA LA HORNILLA YA Y APARTA LA SARTÉN DEL FUEGO!". Luego ayúdalo a respirar sin regañarlo.`;
+    } else if (detectedTone === 'pensativo') {
+      toneInstruction = `ESTADO DE PENSAMIENTO / PAUSA REFLEXIVA: El usuario hizo pausas, pensó con calma o reflexionó.
+- Agradece su calma, valida su pensamiento y dale una respuesta suave, cariñosa y pausada. Demuéstrale que cocinar con calma y pensando cada paso es de los mejores hábitos.`;
+    } else if (detectedTone === 'pregunta') {
+      toneInstruction = `ESTADO DE CURIOSIDAD / PREGUNTA: El usuario hace una pregunta sobre técnica o ingredientes.
+- Responde de forma muy pedagógica, con un truco práctico fácil de recordar y una analogía cotidiana.`;
+    } else {
+      toneInstruction = `ESTADO CALMADO: Conversa con naturalidad, calidez y compañerismo de cocina en español latinoamericano.`;
+    }
+
     const systemInstruction = `Eres "Chef Cero", un mentor culinario de voz cálido, paciente, pedagógico y cercano.
 IDIOMA Y TONO:
 - Habla SIEMPRE en ESPAÑOL LATINOAMERICANO neutro y claro (usa vocabulario común en Latinoamérica: 'estufa/hornilla', 'sartén', 'fuego bajo/medio/alto', 'revolver', 'picar', 'probar', 'alacena/despensa').
@@ -426,12 +441,18 @@ IDIOMA Y TONO:
 - NUNCA comiences todas las respuestas con frases cliché como "Respira hondo" o "¡Hola!". Varía tus respuestas naturalmente.
 - Tu máxima prioridad es la SEGURIDAD personal y evitar que se queme la comida o la sartén.
 
+${toneInstruction}
+
+PACIENCIA CONVERSACIONAL Y COMPRENSIÓN DE SILENCIOS:
+- El usuario está en su cocina activa, oliendo y pensando. Nunca lo apures.
+
 MEMORIA EVOLUTIVA DEL ESTUDIANTE (Lo que sabes de él):
 ${userMemories}
 
 REGLA DE CONEXIÓN PERSONAL Y APRENDIZAJE:
 - Si aplica al tema actual, cita con naturalidad y cariño lo que recuerdas de él (ej: "Como ya sé que le tienes respeto al aceite caliente...", "Recuerda que en tu sartén antiadherente no necesitas tanto aceite", "Como la otra vez dominaste el arroz...").
-- Si el usuario te cuenta un gusto, una limitación (ej: "no tengo batidora", "no como cebolla cruda", "se me quemó la carne", "me da miedo prender el fósforo"), detecta ese hecho y devuélvelo en 'learnedMemory' para almacenarlo en su memoria permanente.
+- DETECCIÓN ACTIVA DE RECUERDOS (learnedMemory):
+  Si el usuario menciona un gusto personal (ej: "me gusta con harto ajo", "no como picante", "poca sal"), su equipamiento (ej: "tengo cocina eléctrica", "mi sartén se pega", "tengo airfryer"), un hábito (ej: "cocino para dos", "tengo poco tiempo en la semana"), o una dificultad/temor (ej: "me da miedo prender el horno", "se me quemó la cebolla"), DEBES EXTRAERLO en el objeto 'learnedMemory' para guardarlo en su cerebro permanente.
 
 REGLAS DE ORO CULTURALES LATINOAMERICANAS Y UNIVERSALES:
 - Sofrito Criollo / Latino: La cebolla se suda a fuego muy lento (8 a 10 min) con calma para que quede dulce, transparente y no caiga pesada.
@@ -443,6 +464,7 @@ REGLAS DE ORO CULTURALES LATINOAMERICANAS Y UNIVERSALES:
 Perfil del estudiante:
 - Nivel actual: ${userLevel}
 - Errores típicos previos: ${userMistakes}
+- Ritmo de paciencia preferido: ${patienceMode || 'zen'}
 - Contexto de cocina actual: ${currentContext ? JSON.stringify(currentContext) : 'En cocina libre o consultando'}
 
 Instrucciones para la respuesta JSON:
@@ -622,8 +644,268 @@ app.get('/api/live/status', (req, res) => {
     model: 'gemini-3.8-live',
     voice: 'Puck',
     language: 'es-419 (Latinoamérica)',
-    features: ['bidirectional_audio', 'realtime_transcription', 'live_interruptions'],
+    features: ['bidirectional_audio', 'realtime_transcription', 'live_interruptions', 'binary_streaming'],
   });
+});
+
+// Endpoint para obtener sugerencias proactivas del Chef según memorias y contexto actual
+app.post('/api/mentor/proactive-tip', async (req, res) => {
+  try {
+    const { userProfile, currentContext } = req.body;
+    const ai = getAi();
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.json({
+        tip: 'Recuerda el secreto del sofrito: la cebolla picada con una pizca de sal a fuego muy suave se vuelve dulce y no cae pesada.',
+        type: 'tecnica',
+        category: 'fuego',
+      });
+    }
+
+    const memoriesText = Array.isArray(userProfile?.evolutionaryMemories) && userProfile.evolutionaryMemories.length > 0
+      ? userProfile.evolutionaryMemories.map((m: any) => `• [${m.category}]: ${m.fact}`).join('\n')
+      : 'Novato con ganas de aprender.';
+
+    const mistakesText = Array.isArray(userProfile?.pastMistakes) && userProfile.pastMistakes.length > 0
+      ? userProfile.pastMistakes.join(', ')
+      : 'Sin errores registrados.';
+
+    const prompt = `Actúa como Chef Cero, un mentor de cocina cálido, perspicaz y proactivo para principiantes en español latinoamericano.
+El estudiante está en su cocina.
+Lo que sabes sobre él:
+- Nivel: ${userProfile?.levelTitle || 'Principiante'}
+- Errores del pasado: ${mistakesText}
+- Memorias acumuladas de sus gustos y hábitos:
+${memoriesText}
+- Contexto actual: ${currentContext ? JSON.stringify(currentContext) : 'En cocina o planificando'}
+
+Genera UNA sola sugerencia proactiva, inteligente y anticipatoria (máximo 2 oraciones) que le sirva AHORA MISMO:
+- Si está en un paso de receta, anticípate al error más común de ese paso basándote en sus recuerdos.
+- Si no está cocinando, dale un truco rápido para potenciar sabores o rescatar sobras según sus gustos aprendidos.
+- Si tiene un error repetido (ej: fuego alto, quemar el ajo), dale un consejo preventivo cariñoso.`;
+
+    const response = await callGeminiWithFallback(ai, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            tip: {
+              type: Type.STRING,
+              description: 'Sugerencia proactiva cálida y personalizada en 1 o 2 oraciones en español latinoamericano.',
+            },
+            type: {
+              type: Type.STRING,
+              description: 'Tipo: preventiva, sabor, rescate o truco',
+            },
+            relatedMemory: {
+              type: Type.STRING,
+              description: 'Memoria o hábito del usuario al que hace alusión, o vacío si es general.',
+            },
+          },
+          required: ['tip', 'type'],
+        },
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, {
+      tip: 'Mantén la llama suave en la estufa para no correr riesgos innecesarios.',
+      type: 'preventiva',
+    });
+
+    return res.json(parsed);
+  } catch (err: any) {
+    console.warn('Chef Cero: Error generando sugerencia proactiva:', err?.message);
+    return res.json({
+      tip: 'Cocinar no es una carrera. Pon la llama baja, respira el aroma y tómate tu tiempo.',
+      type: 'preventiva',
+    });
+  }
+});
+
+// Endpoint ultraligero para medición de latencia RTT de red en tiempo real
+app.get('/api/live/ping', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  return res.json({ ok: true, t: Date.now() });
+});
+
+// Endpoint de Visión Multimodal: Escaneo de Refrigerador o Despensa con Cámara
+app.post('/api/scan-fridge', async (req, res) => {
+  try {
+    const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Falta la imagen en base64' });
+    }
+
+    const ai = getAi();
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    // Limpiar prefijo data:image/...;base64, si viene incluido
+    let cleanBase64 = imageBase64;
+    let actualMime = mimeType;
+    if (imageBase64.includes(';base64,')) {
+      const parts = imageBase64.split(';base64,');
+      actualMime = parts[0].replace('data:', '');
+      cleanBase64 = parts[1];
+    }
+
+    if (!apiKey) {
+      return res.json({
+        detectedIngredients: ['Huevos', 'Pan', 'Tomate', 'Queso', 'Aceite'],
+        chefObservation: '¡Tienes una excelente base! Con estos ingredientes podemos armar una comida deliciosa y nutritiva en menos de 10 minutos.',
+        suggestedDishes: [
+          {
+            id: 'scan-dish-1',
+            title: 'Tostas Doradas con Huevo Suave y Tomate',
+            totalTimeMinutes: 8,
+            difficulty: 'Principiante Total',
+            ingredientsUsed: ['Pan', 'Huevos', 'Tomate', 'Aceite'],
+            keyTip: 'Tuesta el pan con sartén seca a fuego medio y pon el huevo encima cuando aún esté brillante.',
+            quickSteps: [
+              {
+                stepNumber: 1,
+                title: 'Preparación en frío',
+                instruction: 'Corta 2 rebanadas de pan y raya medio tomate sobre un plato hondo con una pizca de sal.',
+                heatLevel: 'apagado',
+              },
+              {
+                stepNumber: 2,
+                title: 'Tostar el pan en sartén',
+                instruction: 'Pon las rebanadas en sartén a fuego medio por 2 minutos por lado hasta que crujan.',
+                heatLevel: 'medio',
+              },
+              {
+                stepNumber: 3,
+                title: 'Montaje y huevo',
+                instruction: 'Unta el tomate sobre el pan caliente, cuaja un huevo tierno 1 minuto y corona la tosta.',
+                heatLevel: 'bajo',
+              },
+            ],
+          },
+          {
+            id: 'scan-dish-2',
+            title: 'Huevos Revueltos Cremosos con Queso Derretido',
+            totalTimeMinutes: 7,
+            difficulty: 'Principiante Total',
+            ingredientsUsed: ['Huevos', 'Queso', 'Aceite'],
+            keyTip: 'Apaga el fuego en cuanto los huevos comiencen a cuajar; el calor de la sartén terminará el trabajo.',
+            quickSteps: [
+              {
+                stepNumber: 1,
+                title: 'Batir en tazón',
+                instruction: 'Bate 2 huevos con una pizca de sal y corta el queso en cubitos pequeños.',
+                heatLevel: 'apagado',
+              },
+              {
+                stepNumber: 2,
+                title: 'Cocción suave con espátula',
+                instruction: 'Calienta la sartén a fuego bajo con un hilo de aceite, vierte los huevos y revuelve lento.',
+                heatLevel: 'bajo',
+              },
+              {
+                stepNumber: 3,
+                title: 'Fundir con fuego apagado',
+                instruction: 'Echa el queso, apaga la estufa de inmediato y deja que se funda 30 segundos antes de servir.',
+                heatLevel: 'apagado',
+              },
+            ],
+          },
+        ],
+      });
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: `Eres el Chef Mentor de Chef Cero, una app diseñada para personas que no saben cocinar nada y tienen miedo a equivocarse.
+Examina detenidamente esta imagen de refrigerador, estante, mesa o ingredientes.
+1. Lista todos los ingredientes o alimentos comestibles reconocibles (máximo 8).
+2. Propón 2 platos express ultra sencillos (de 8 a 15 minutos máximo) que se puedan preparar con lo que se ve.
+3. Para cada plato:
+   - title: nombre apetitoso y claro
+   - totalTimeMinutes: número entre 7 y 15
+   - difficulty: 'Principiante Total'
+   - ingredientsUsed: array de ingredientes usados de la foto
+   - keyTip: un tip anti-quemaduras o secreto de sabor en 1 sola frase
+   - quickSteps: exactamente 3 pasos cortísimos (el paso 1 SIEMPRE debe ser con heatLevel: 'apagado' para mise en place).
+Responde en JSON estricto.`,
+            },
+            {
+              inlineData: {
+                mimeType: actualMime,
+                data: cleanBase64,
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            detectedIngredients: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'Ingredientes o alimentos detectados en la imagen',
+            },
+            chefObservation: {
+              type: Type.STRING,
+              description: 'Comentario cálido y motivador en 1-2 frases',
+            },
+            suggestedDishes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  totalTimeMinutes: { type: Type.INTEGER },
+                  difficulty: { type: Type.STRING },
+                  ingredientsUsed: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  keyTip: { type: Type.STRING },
+                  quickSteps: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        stepNumber: { type: Type.INTEGER },
+                        title: { type: Type.STRING },
+                        instruction: { type: Type.STRING },
+                        heatLevel: { type: Type.STRING },
+                      },
+                      required: ['stepNumber', 'title', 'instruction', 'heatLevel'],
+                    },
+                  },
+                },
+                required: ['id', 'title', 'totalTimeMinutes', 'ingredientsUsed', 'keyTip', 'quickSteps'],
+              },
+            },
+          },
+          required: ['detectedIngredients', 'chefObservation', 'suggestedDishes'],
+        },
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, {
+      detectedIngredients: ['Ingredientes frescos'],
+      chefObservation: 'Detecté ingredientes listos para preparar un plato rápido y sabroso.',
+      suggestedDishes: [],
+    });
+
+    return res.json(parsed);
+  } catch (error: any) {
+    console.warn('Chef Cero: Error en escaneo multimodal de refrigerador:', error?.message);
+    return res.status(500).json({
+      error: 'No se pudo analizar la imagen en este momento. Intenta con una toma más clara o escribe los ingredientes.',
+    });
+  }
 });
 
 // 2. Recipe Planner & "Tengo 3 ingredientes" Generator
@@ -1323,7 +1605,12 @@ async function startServer() {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
           },
           systemInstruction:
-            'Eres Chef Cero, un mentor de cocina cálido, empático, paciente y experto para principiantes en español latinoamericano nativo. Habla SIEMPRE en español nativo con acento hispano natural y acogedor. Respuestas breves, directas y tranquilizadoras de 1 o 2 oraciones, ideales para alguien que está cocinando activamente con las manos ocupadas frente a la sartén. Si el usuario te habla asustado (humo, fuego, quemado), indícale con calma que retire la sartén del fuego y respire.',
+            'Eres Chef Cero, un mentor culinario de voz cálido, empático, paciente y experto para principiantes en español latinoamericano nativo. Habla SIEMPRE en español nativo con acento cálido y acogedor. Respuestas breves, directas y tranquilizadoras de 1 o 2 oraciones, ideales para alguien que está cocinando activamente con las manos ocupadas frente a la sartén.\n' +
+            'REGLA FUNDAMENTAL DE PACIENCIA Y RITMO: El usuario está cocinando en tiempo real, oliendo, cortando y pensando sus preguntas. Respeta sus silencios y pausas reflexivas. Si titubea o dice "ehhh...", "a ver...", "espera..." o hace una pausa para mirar su sartén, GUARDA SILENCIO Y DALE ESPACIO para completar su idea. Nunca respondas apresuradamente ni lo cortes.\n' +
+            'MODULACIÓN TONAL Y EMOCIONAL: Identifica el tono de voz del usuario:\n' +
+            '- Si te habla asustado, alarmado o gritando (humo, fuego, quemado, desborde), responde al instante con firmeza y calma: "¡Apaga la hornilla ya y aparta la sartén del fuego!".\n' +
+            '- Si te hace una pregunta, responde con amabilidad pedagógica y un truco fácil.\n' +
+            '- Si está pensativo o pausado, responde con calidez y tranquilidad.',
           outputAudioTranscription: {},
           inputAudioTranscription: {},
         },
@@ -1402,10 +1689,40 @@ async function startServer() {
       return;
     }
 
-    clientWs.on('message', async (data: any) => {
+    clientWs.on('message', async (data: any, isBinary: boolean) => {
       if (!session || isClosed) return;
       try {
+        // Optimización de Ultra-Baja Latencia: Streaming binario directo (Int16 PCM)
+        if (isBinary || (Buffer.isBuffer(data) && data.length > 0 && data[0] !== 123 /* '{' */)) {
+          const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+          session.sendRealtimeInput({
+            audio: { data: buf.toString('base64'), mimeType: 'audio/pcm;rate=16000' },
+          });
+          return;
+        }
+
         const msg = JSON.parse(data.toString());
+
+        // Heartbeat y medición de latencia RTT de red en tiempo real
+        if (msg.type === 'ping') {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(
+              JSON.stringify({
+                type: 'pong',
+                clientTime: msg.clientTime,
+                serverTime: Date.now(),
+              })
+            );
+          }
+          return;
+        }
+
+        if (msg.type === 'tone_update' && msg.tone) {
+          // Loggear y enviar contexto sutil si aplica
+          console.log(`Chef Cero Live: Tono emocional del usuario actualizado a: ${msg.tone}`);
+          return;
+        }
+
         if (msg.type === 'audio' && msg.data) {
           // Enviar audio PCM de 16kHz al modelo Live
           session.sendRealtimeInput({
