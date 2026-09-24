@@ -485,6 +485,10 @@ Instrucciones para la respuesta JSON:
         }
       }
     }
+    // Regla estricta de Gemini API: El primer contenido DEBE tener role 'user', no 'model'
+    while (contents.length > 0 && contents[0].role === 'model') {
+      contents.shift();
+    }
     contents.push({
       role: 'user',
       parts: [{ text: message }],
@@ -544,9 +548,11 @@ Instrucciones para la respuesta JSON:
       throw new Error('Gemini reply invalid or empty');
     }
 
-    // Generar audio nativo en español latinoamericano con Gemini TTS (evita voz robótica o acento en inglés)
+    // Generar audio nativo en español latinoamericano con Gemini TTS con timeout de 3.5s
     try {
-      const audioResult = await generateSpanishSpeechAudio(ai, parsed.reply);
+      const audioPromise = generateSpanishSpeechAudio(ai, parsed.reply);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
+      const audioResult = await Promise.race([audioPromise, timeoutPromise]);
       if (audioResult) {
         parsed.audioBase64 = audioResult.audioBase64;
         parsed.audioMimeType = audioResult.mimeType;
@@ -577,23 +583,12 @@ async function generateSpanishSpeechAudio(
 
     if (!cleanText) return null;
 
-    // Usar gemini-3.8-flash-lite-tts con voz Puck (entonación cálida, cercana y empática en español)
+    // Usar gemini-3.8-flash-lite-tts con voz Puck y directiva explícita de pronunciación latina
     const ttsResponse = await ai.models.generateContent({
       model: 'gemini-3.8-flash-lite-tts',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: cleanText,
-              speechMetadata: {
-                style: 'Calm, warm, empathetic Latin American Spanish native speaker mentor chef.',
-              },
-            },
-          ],
-        },
-      ],
+      contents: cleanText,
       config: {
+        systemInstruction: 'Lee el texto exactamente como está escrito con pronunciación nativa y cálida en español latinoamericano.',
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: {
@@ -904,6 +899,230 @@ Responde en JSON estricto.`,
     console.warn('Chef Cero: Error en escaneo multimodal de refrigerador:', error?.message);
     return res.status(500).json({
       error: 'No se pudo analizar la imagen en este momento. Intenta con una toma más clara o escribe los ingredientes.',
+    });
+  }
+});
+
+// Endpoint dedicado: Inspector de Producto, Frescura y Sugerencia de Cocina con Cámara IA
+app.post('/api/inspect-product', async (req, res) => {
+  try {
+    const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Falta la imagen del producto en base64' });
+    }
+
+    const ai = getAi();
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    let cleanBase64 = imageBase64;
+    let actualMime = mimeType;
+    if (imageBase64.includes(';base64,')) {
+      const parts = imageBase64.split(';base64,');
+      actualMime = parts[0].replace('data:', '');
+      cleanBase64 = parts[1];
+    }
+
+    if (!apiKey) {
+      return res.json({
+        productName: 'Tomate fresco de ensalada',
+        productCategory: 'verduras',
+        status: 'bueno',
+        statusHeadline: '¡En excelente estado y listo para cocinar!',
+        freshnessScore: 92,
+        estimatedShelfLife: '4 a 5 días en refrigeración o lugar fresco',
+        confidenceExplanation: 'Piel tersa, color rojo uniforme, sin manchas de moho ni hendiduras blandas.',
+        sensoryCheck: {
+          sight: 'Color brillante y piel sin arrugas profundas ni hongos.',
+          smell: 'Aroma vegetal fresco y ligeramente dulce en la zona del pedúnculo.',
+          touch: 'Firme al tacto con una leve elasticidad; no debe sentirse aguado.',
+        },
+        safetyAdvice: 'Lávalo con abundante agua fría antes de cortar. La piel está impecable.',
+        suggestedDishes: [
+          {
+            id: 'prod-dish-1',
+            title: 'Tostada con Tomate Rallado y Huevo Pochado',
+            totalTimeMinutes: 8,
+            difficulty: 'Principiante Total',
+            ingredientsNeeded: ['Pan', '1 Huevo', 'Aceite de oliva o vegetal', 'Sal'],
+            whyThisDishWorks: 'Aprovecha la jugosidad natural del tomate fresco sin necesidad de cocciones largas.',
+            quickSteps: [
+              {
+                stepNumber: 1,
+                title: 'Rallado en frío',
+                instruction: 'Corta el tomate a la mitad y rállalo con un rallador sobre un plato hondo con sal y unas gotas de aceite.',
+                heatLevel: 'apagado',
+              },
+              {
+                stepNumber: 2,
+                title: 'Tostar pan',
+                instruction: 'Dora las rebanadas de pan en sartén a fuego medio 2 minutos por lado.',
+                heatLevel: 'medio',
+              },
+              {
+                stepNumber: 3,
+                title: 'Montaje jugoso',
+                instruction: 'Unta el tomate abundante sobre el pan caliente y acompáñalo con tu huevo favorito.',
+                heatLevel: 'bajo',
+              },
+            ],
+          },
+          {
+            id: 'prod-dish-2',
+            title: 'Sofrito Base Exprés para Pastas o Arroz',
+            totalTimeMinutes: 10,
+            difficulty: 'Principiante Total',
+            ingredientsNeeded: ['Cebolla o ajo', 'Aceite', 'Sal y pimienta'],
+            whyThisDishWorks: 'El calor suave concentra los azúcares naturales del tomate volviéndolo dulce y aromático.',
+            quickSteps: [
+              {
+                stepNumber: 1,
+                title: 'Picar en cubitos',
+                instruction: 'Pica el tomate en cuadritos con su piel y semillas en una tabla limpia.',
+                heatLevel: 'apagado',
+              },
+              {
+                stepNumber: 2,
+                title: 'Sofreír a fuego suave',
+                instruction: 'Calienta 1 cucharada de aceite a fuego medio-bajo y echa el tomate picado con sal.',
+                heatLevel: 'medio',
+              },
+              {
+                stepNumber: 3,
+                title: 'Reducción dulce',
+                instruction: 'Cocina 6 minutos removiendo con cuchara de madera hasta que se forme una salsita casera tierna.',
+                heatLevel: 'bajo',
+              },
+            ],
+          },
+        ],
+        audioScript: 'He revisado tu tomate con atención. Se encuentra en excelente estado, firme y con su piel brillante. Puedes usarlo con total confianza hoy mismo en una tosta rápida o un sofrito casero.',
+      });
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: `Eres el Chef Mentor y Especialista en Seguridad Alimentaria de Chef Cero.
+El usuario abrió su refrigerador o alacena, sacó UN alimento o producto específico y le tomó una foto con la cámara para saber:
+1. Qué producto exacto es.
+2. Si está en buen estado, si debe consumirse hoy mismo o si está vencido/en mal estado (descartar).
+3. Cómo comprobarlo con sus propios sentidos (vista, olfato, tacto).
+4. Con qué y cómo cocinarlo de forma fácil y deliciosa hoy mismo.
+
+INSTRUCCIONES CLAVE DE EVALUACIÓN:
+- Sé riguroso y protector: Si el alimento muestra moho evidente, decoloración grisácea/verdosa, hinchazón en envase o signos de putrefacción, pon status: 'descartar' y advierte con amabilidad que la salud va primero.
+- Si está en buen estado (fresco) pon status: 'bueno'.
+- Si está maduro, con manchitas inocuas o cerca de pasarse pero comestible tras cocción, pon status: 'consumir_urgente'.
+- Propón 2 recetas prácticas para principiantes (de 8 a 15 min) que aprovechen este ingrediente. El paso 1 de cada receta DEBE ser con heatLevel: 'apagado' (mise en place).
+- Genera un audioScript de 2 o 3 oraciones cálidas en español latinoamericano para que el mentor se lo diga en audio.`,
+            },
+            {
+              inlineData: {
+                mimeType: actualMime,
+                data: cleanBase64,
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            productName: { type: Type.STRING, description: 'Nombre claro y común del alimento' },
+            productCategory: { type: Type.STRING, description: 'verduras, carnes, lacteos, frutas, huevos, legumbres, panaderia u otros' },
+            status: { type: Type.STRING, description: 'bueno | consumir_urgente | descartar' },
+            statusHeadline: { type: Type.STRING, description: 'Frase titular clara sobre su estado' },
+            freshnessScore: { type: Type.INTEGER, description: 'Puntaje de 1 a 100 de frescura' },
+            estimatedShelfLife: { type: Type.STRING, description: 'Tiempo restante estimado antes de vencer' },
+            confidenceExplanation: { type: Type.STRING, description: 'Por qué llegaste a esa conclusión según lo visible en la foto' },
+            sensoryCheck: {
+              type: Type.OBJECT,
+              properties: {
+                sight: { type: Type.STRING, description: 'Qué comprobar con la vista' },
+                smell: { type: Type.STRING, description: 'Qué comprobar con el olfato' },
+                touch: { type: Type.STRING, description: 'Qué comprobar con el tacto o textura' },
+              },
+              required: ['sight', 'smell', 'touch'],
+            },
+            safetyAdvice: { type: Type.STRING, description: 'Consejo de higiene o seguridad de oro' },
+            suggestedDishes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  totalTimeMinutes: { type: Type.INTEGER },
+                  difficulty: { type: Type.STRING },
+                  ingredientsNeeded: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  whyThisDishWorks: { type: Type.STRING },
+                  quickSteps: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        stepNumber: { type: Type.INTEGER },
+                        title: { type: Type.STRING },
+                        instruction: { type: Type.STRING },
+                        heatLevel: { type: Type.STRING },
+                      },
+                      required: ['stepNumber', 'title', 'instruction', 'heatLevel'],
+                    },
+                  },
+                },
+                required: ['id', 'title', 'totalTimeMinutes', 'ingredientsNeeded', 'whyThisDishWorks', 'quickSteps'],
+              },
+            },
+            audioScript: { type: Type.STRING, description: 'Mensaje cálido para ser escuchado por voz en español latino' },
+          },
+          required: [
+            'productName',
+            'productCategory',
+            'status',
+            'statusHeadline',
+            'freshnessScore',
+            'estimatedShelfLife',
+            'confidenceExplanation',
+            'sensoryCheck',
+            'safetyAdvice',
+            'suggestedDishes',
+            'audioScript',
+          ],
+        },
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, {} as any);
+    if (!parsed || !parsed.productName) {
+      throw new Error('Respuesta inválida de Gemini al inspeccionar producto');
+    }
+
+    // Generar audio nativo de voz con Gemini TTS en español latino (timeout 3.5s)
+    try {
+      if (parsed.audioScript) {
+        const audioPromise = generateSpanishSpeechAudio(ai, parsed.audioScript);
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
+        const audioResult = await Promise.race([audioPromise, timeoutPromise]);
+        if (audioResult) {
+          parsed.audioBase64 = audioResult.audioBase64;
+          parsed.audioMimeType = audioResult.mimeType;
+        }
+      }
+    } catch (ttsErr) {
+      console.warn('Chef Cero: Aviso generando audio de veredicto:', ttsErr);
+    }
+
+    return res.json(parsed);
+  } catch (error: any) {
+    console.warn('Chef Cero: Error en inspección de producto:', error?.message);
+    return res.status(500).json({
+      error: 'No pudimos examinar el producto en este momento. Intenta enfocarlo con mejor luz o más de cerca.',
     });
   }
 });

@@ -236,43 +236,11 @@ export function playEmergencyAlertSound() {
 // Natural Spanish Speech Synthesis con soporte automático para Subtítulos Accesibles
 let currentUtterance: SpeechSynthesisUtterance | null = null;
 
+import { CulinaryPhoneticParser } from './phoneticParser';
+
 // Helper para limpiar y normalizar fonéticamente el texto para una pronunciación perfecta en español
 export function normalizeTextForSpeech(raw: string): string {
-  if (!raw) return '';
-
-  let t = raw
-    // Quitar markdown
-    .replace(/\*\*/g, '')
-    .replace(/\*/g, '')
-    .replace(/#{1,6}\s?/g, '')
-    .replace(/`[^`]*`/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    // Quitar emojis y símbolos especiales que los motores de voz leen feo
-    .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
-    .replace(/[\u{2600}-\u{26FF}]/gu, '')
-    .replace(/[\u{2700}-\u{27BF}]/gu, '')
-    .replace(/[•·—–]/g, ' ')
-    // Normalizar abreviaturas culinarias comunes para pronunciación natural
-    .replace(/\b1\/2\b/g, 'medio')
-    .replace(/\b1\/4\b/g, 'un cuarto')
-    .replace(/\b3\/4\b/g, 'tres cuartos')
-    .replace(/\bcdas\b/gi, 'cucharadas')
-    .replace(/\bcda\b/gi, 'cucharada')
-    .replace(/\bcdtas\b/gi, 'cucharaditas')
-    .replace(/\bcdta\b/gi, 'cucharadita')
-    .replace(/\baprox\.?\b/gi, 'aproximadamente')
-    .replace(/\btemp\.?\b/gi, 'temperatura')
-    .replace(/\bkg\b/gi, 'kilos')
-    .replace(/\bgrs?\b/gi, 'gramos')
-    .replace(/\bml\b/gi, 'mililitros')
-    .replace(/(\d+)\s*mins?\b/gi, '$1 minutos')
-    .replace(/(\d+)\s*segs?\b/gi, '$1 segundos')
-    .replace(/\bS\.O\.S\.\b/gi, 'emergencia')
-    // Limpieza de espacios dobles
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return t;
+  return CulinaryPhoneticParser.process(raw);
 }
 
 // Helper para seleccionar la mejor voz en español latinoamericano disponible
@@ -310,26 +278,24 @@ function getBestLatinAmericanVoice(): SpeechSynthesisVoice | null {
   }
 
   // 2. Locales explícitos de Latinoamérica (es-419, es-MX, es-US, es-CO, es-CL, es-AR, etc.)
-  const latinLocales = ['es-419', 'es-mx', 'es-us', 'es-co', 'es-cl', 'es-ar', 'es-pe'];
+  const latinLocales = ['es-419', 'es-mx', 'es-us', 'es-co', 'es-cl', 'es-ar', 'es-pe', 'es-419'];
   for (const loc of latinLocales) {
     const match = voices.find((v) => v.lang && v.lang.toLowerCase() === loc);
     if (match) return match;
   }
 
-  // 3. Fallback: cualquier voz que empiece por es- (excluyendo es-ES si hay otra disponible)
-  const nonSpainSpanish = voices.find(
-    (v) => v.lang && v.lang.toLowerCase().startsWith('es') && !v.lang.toLowerCase().includes('es-es')
+  // 3. Cualquier voz en español
+  const anySpanish = voices.find(
+    (v) => v.lang && v.lang.toLowerCase().startsWith('es')
   );
-  if (nonSpainSpanish) return nonSpainSpanish;
+  if (anySpanish) return anySpanish;
 
-  // 4. Último recurso: cualquier voz en español
-  return voices.find((v) => v.lang && v.lang.toLowerCase().startsWith('es')) || null;
+  return null;
 }
 
 // Inicializar escucha de carga diferida de voces en navegadores (Chromium / Safari)
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
   window.speechSynthesis.onvoiceschanged = () => {
-    // Voces precargadas en memoria
     getBestLatinAmericanVoice();
   };
 }
@@ -388,7 +354,7 @@ function playBase64Audio(
   }
 }
 
-// Fallback seguro a SpeechSynthesis del navegador, pero BLOQUEANDO voces en inglés
+// Fallback a SpeechSynthesis del navegador, pero BLOQUEANDO estrictamente cualquier voz que no sea en español
 function speakWithBrowserFallback(
   cleanText: string,
   onEndCallback?: () => void
@@ -398,21 +364,15 @@ function speakWithBrowserFallback(
     return;
   }
 
-  const voices = window.speechSynthesis.getVoices();
   const latinVoice = getBestLatinAmericanVoice();
 
-  // REGLA CRÍTICA ANTI-ACENTO: Si el navegador no tiene ninguna voz en español,
-  // NO permitir que una voz en inglés intente pronunciar español ("inglés hablando mal español").
-  const hasSpanishVoice = voices.some(
-    (v) => (v.lang && v.lang.toLowerCase().startsWith('es')) || v.name.toLowerCase().includes('spanish')
-  );
-
-  if (!hasSpanishVoice && !latinVoice) {
-    console.info('Chef Cero: No hay voz nativa en español en el sistema operativo; subtítulos visibles activados.');
-    // Concluir amablemente sin emitir audio deformado
+  // REGLA CRÍTICA ANTI-GRINGO: Si no hay ninguna voz auténtica en español instalada en el sistema,
+  // NUNCA permitir que la voz en inglés por defecto lea texto en español.
+  if (!latinVoice) {
+    console.info('Chef Cero: Sin voz nativa en español en el sistema; subtítulos claros mostrados sin deformación de acento.');
     setTimeout(() => {
       onEndCallback?.();
-    }, 1500);
+    }, 2500);
     return;
   }
 
@@ -425,13 +385,10 @@ function speakWithBrowserFallback(
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = latinVoice?.lang || 'es-419';
-    utterance.rate = 0.94; // Cadencia óptima para máxima inteligibilidad
-    utterance.pitch = 1.02; // Tono cálido y empático
-
-    if (latinVoice) {
-      utterance.voice = latinVoice;
-    }
+    utterance.voice = latinVoice; // OBLIGATORIO: siempre fijar la voz en español
+    utterance.lang = latinVoice.lang || 'es-419';
+    utterance.rate = 0.95; // Cadencia óptima y clara
+    utterance.pitch = 1.0; // Tono natural
 
     const cleanupAndFinish = () => {
       if (speechWatchdog) {

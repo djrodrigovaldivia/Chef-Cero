@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Mic, Clock, Flame, AlertTriangle, ChevronRight, HelpCircle, Check, ChefHat, Camera, GraduationCap } from 'lucide-react';
+import { Sparkles, Mic, Clock, Flame, AlertTriangle, ChevronRight, HelpCircle, Check, ChefHat, Camera, GraduationCap, Search } from 'lucide-react';
 import { Recipe, UserProfile } from '../types';
 import { STARTER_RECIPES } from '../data/recipeData';
 
@@ -10,7 +10,7 @@ interface SimpleModeViewProps {
   onOpenEmergency: () => void;
   onOpenLeftovers: () => void;
   onSwitchToComplete: () => void;
-  onOpenScanner?: () => void;
+  onOpenScanner?: (mode?: 'inspect_product' | 'fridge') => void;
   onOpenTechniques?: () => void;
 }
 
@@ -115,25 +115,38 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
               </button>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap sm:flex-nowrap gap-2">
               {onOpenScanner && (
-                <button
-                  type="button"
-                  onClick={onOpenScanner}
-                  className="px-4 py-3.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 font-bold text-sm rounded-2xl transition flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-                  title="Tomar foto de tu nevera o alacena"
-                >
-                  <Camera className="w-4 h-4 text-amber-700" />
-                  <span className="hidden sm:inline">Foto Nevera</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenScanner('inspect_product')}
+                    className="px-3.5 sm:px-4 py-3.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-950 font-bold text-sm rounded-2xl transition flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-2xs"
+                    title="Sacar un producto de la nevera: saber si está en buen estado y cómo cocinarlo"
+                  >
+                    <Search className="w-4 h-4 text-emerald-700" />
+                    <span className="hidden sm:inline">¿Está bueno mi producto?</span>
+                    <span className="sm:hidden">¿Está bueno?</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onOpenScanner('fridge')}
+                    className="px-3.5 sm:px-4 py-3.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 font-bold text-sm rounded-2xl transition flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-2xs"
+                    title="Tomar foto general de tu nevera o alacena"
+                  >
+                    <Camera className="w-4 h-4 text-amber-700" />
+                    <span className="hidden sm:inline">Foto Nevera</span>
+                  </button>
+                </>
               )}
 
               <button
                 type="submit"
-                className="px-6 py-3.5 bg-stone-900 hover:bg-stone-800 text-white font-bold text-sm rounded-2xl transition shadow-md flex items-center justify-center gap-2 shrink-0 cursor-pointer flex-1 sm:flex-initial"
+                className="px-5 sm:px-6 py-3.5 bg-stone-900 hover:bg-stone-800 text-white font-bold text-sm rounded-2xl transition shadow-md flex items-center justify-center gap-2 shrink-0 cursor-pointer flex-1 sm:flex-initial"
               >
                 <Sparkles className="w-4 h-4 text-amber-400" />
-                <span>Resolver mi comida</span>
+                <span>Resolver comida</span>
               </button>
             </div>
           </div>

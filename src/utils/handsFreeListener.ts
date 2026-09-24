@@ -7,6 +7,8 @@
  * - Recuperación automática de conexión ante caídas del motor de voz
  */
 
+import { KitchenResilientVAD } from './kitchenVad';
+
 export interface HandsFreeVoiceCallbacks {
   onNextStep: () => void;
   onPrevStep: () => void;
@@ -16,6 +18,7 @@ export interface HandsFreeVoiceCallbacks {
   onEmergency: () => void;
   onStatusChange?: (isListening: boolean, lastHeardWord?: string) => void;
   onCommandExecuted?: (commandName: string, transcript: string) => void;
+  onKitchenNoiseDetected?: (noiseType: string) => void;
 }
 
 export class HandsFreeCookingListener {
@@ -25,10 +28,37 @@ export class HandsFreeCookingListener {
   private isListening = false;
   private lastTriggeredTime = 0;
   private readonly COOLDOWN_MS = 750; // Anti-rebote para comandos en streaming
+  private kitchenVad: KitchenResilientVAD | null = null;
+  private isHumanVoiceActive = false;
 
   constructor(callbacks: HandsFreeVoiceCallbacks) {
     this.callbacks = callbacks;
+    this.initKitchenVad();
     this.initSpeechRecognition();
+  }
+
+  private initKitchenVad() {
+    try {
+      this.kitchenVad = new KitchenResilientVAD({
+        onVoiceStart: () => {
+          this.isHumanVoiceActive = true;
+        },
+        onVoiceEnd: () => {
+          // Gracia de 300ms tras terminar de hablar
+          setTimeout(() => {
+            this.isHumanVoiceActive = false;
+          }, 300);
+        },
+        onNoiseRejected: (reason) => {
+          this.callbacks.onKitchenNoiseDetected?.(reason);
+        },
+      });
+      this.kitchenVad.start().catch((e) => {
+        console.warn('Chef Cero VAD notice: Audio DSP filter skipped (fallback standard microphone):', e?.message);
+      });
+    } catch (e) {
+      console.warn('Chef Cero VAD init fallback:', e);
+    }
   }
 
   private initSpeechRecognition() {
@@ -221,6 +251,10 @@ export class HandsFreeCookingListener {
 
   public stop() {
     this.isExplicitlyStopped = true;
+    if (this.kitchenVad) {
+      this.kitchenVad.stop();
+      this.kitchenVad = null;
+    }
     if (this.recognition && this.isListening) {
       try {
         this.recognition.stop();

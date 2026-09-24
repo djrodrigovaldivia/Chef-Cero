@@ -5,7 +5,7 @@ import {
   HelpCircle, ChefHat, Award, PlusCircle, CheckCircle2,
   Bell, BellRing, BellOff, Volume2, VolumeX, MessageSquare, Trash2, Smartphone, Check, AlertCircle,
   Sun, ShieldAlert, Ear, Eye, Wind, ChevronDown, ChevronUp, WifiOff,
-  ShoppingCart, Users, Mic, MicOff, Maximize2, Minimize2, HelpCircle as FaqIcon
+  ShoppingCart, Users, Mic, MicOff, Maximize2, Minimize2, Camera, HelpCircle as FaqIcon
 } from 'lucide-react';
 import { Recipe, RecipeStep, UserProfile, ActiveTimer, WorldCuisineId, CULINARY_LEVELS, CulinaryLevel, CulinaryLevelMeta } from '../types';
 import { STARTER_RECIPES, WORLD_CUISINES } from '../data/recipeData';
@@ -37,6 +37,7 @@ import {
 import { setupWakeLockAutoRefresh, isWakeLockSupported } from '../utils/wakeLock';
 import { CookingEmergencyModal } from './CookingEmergencyModal';
 import { FloatingTimerIsland } from './FloatingTimerIsland';
+import { StepVisualTextureCard } from './StepVisualTextureCard';
 
 interface CookingModeProps {
   userProfile: UserProfile;
@@ -2413,6 +2414,75 @@ export const CookingMode: React.FC<CookingModeProps> = ({
             </p>
           </div>
 
+          {/* Marcador Dinámico de Textura, Color y Referencia Visual del Paso */}
+          <StepVisualTextureCard
+            key={`step-visual-${selectedRecipe.id}-${currentStep.stepNumber}`}
+            step={currentStep}
+            recipeTitle={selectedRecipe.title}
+            recipeImageUrl={selectedRecipe.imageUrl}
+            onAskChefVisual={(query) => {
+              onOpenVoiceAssistantWithContext({
+                recipeTitle: selectedRecipe.title,
+                stepNumber: currentStep.stepNumber,
+                stepInstruction: query || currentStep.instruction,
+                heatLevel: currentStep.heatLevel,
+              });
+            }}
+          />
+
+          {/* Galería Visual de Plato Terminado (Solo en el último paso para ver cómo debe quedar emplatado) */}
+          {currentStepIndex === selectedRecipe.steps.length - 1 && (
+            <div className="bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-100/30 border-2 border-amber-400 rounded-2xl p-4 sm:p-5 space-y-3 animate-fade-in shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center text-lg font-bold shadow-xs">
+                  🏆
+                </div>
+                <div>
+                  <h4 className="text-sm sm:text-base font-black text-stone-900 font-serif">
+                    ¡Meta Final Lograda! Así debe lucir tu plato terminado:
+                  </h4>
+                  <p className="text-xs text-stone-600">
+                    Compara tu plato con estas fotos de referencia de cómo debe verse listo para comer.
+                  </p>
+                </div>
+              </div>
+
+              {/* Grid de 1 a 3 fotos del plato final */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                {(selectedRecipe.finishGalleryUrls && selectedRecipe.finishGalleryUrls.length > 0
+                  ? selectedRecipe.finishGalleryUrls
+                  : [selectedRecipe.imageUrl || 'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=800&q=80']
+                ).map((url, idx) => (
+                  <div key={idx} className="rounded-xl overflow-hidden border border-stone-200 shadow-2xs h-36 bg-stone-900 relative group">
+                    <img
+                      src={url}
+                      alt={`Presentación final ${idx + 1}`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <span className="absolute bottom-1.5 left-1.5 bg-stone-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
+                      Foto #{idx + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Puntos visuales de comprobación del plato */}
+              {selectedRecipe.finishVisualCheckpoints && selectedRecipe.finishVisualCheckpoints.length > 0 && (
+                <div className="bg-white p-3.5 rounded-xl border border-amber-300/80 space-y-1.5 text-xs text-stone-800 shadow-2xs">
+                  <div className="font-extrabold text-amber-950 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Puntos clave de éxito visual:</span>
+                  </div>
+                  <ul className="space-y-1 text-stone-700 pl-4 list-disc font-medium">
+                    {selectedRecipe.finishVisualCheckpoints.map((pt, i) => (
+                      <li key={i}>{pt}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Radar Sensorial: Los 3 Sentidos del Paso (Oído, Vista, Olfato) */}
           <div className="bg-amber-50/70 border border-amber-200/90 rounded-xl p-3.5 space-y-2">
             <div className="text-[11px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -2731,6 +2801,26 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               <Award className="w-6 h-6 text-amber-500" />
               <span>Evaluación de tu Plato con el Mentor</span>
             </h3>
+
+            {/* Foto de Referencia del Plato Terminado */}
+            <div className="rounded-xl overflow-hidden border border-stone-200 bg-stone-900 relative">
+              <img
+                src={selectedRecipe.finishGalleryUrls?.[0] || selectedRecipe.imageUrl || 'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=800&q=80'}
+                alt={selectedRecipe.title}
+                className="w-full h-36 object-cover opacity-90"
+              />
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-stone-950/90 via-stone-950/50 to-transparent p-3 text-white flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider block">
+                    Referencia ideal del plato terminado:
+                  </span>
+                  <span className="text-xs font-bold truncate block">{selectedRecipe.title}</span>
+                </div>
+                <span className="text-[10px] bg-white/20 backdrop-blur-xs px-2 py-0.5 rounded-full font-semibold">
+                  {selectedRecipe.totalTimeMinutes} min
+                </span>
+              </div>
+            </div>
 
             {!evalFeedbackResult ? (
               <div className="space-y-4 text-left">

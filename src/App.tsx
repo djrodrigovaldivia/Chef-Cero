@@ -115,6 +115,7 @@ export default function App() {
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [isShoppingListOpen, setIsShoppingListOpen] = useState(false);
   const [isFridgeScannerOpen, setIsFridgeScannerOpen] = useState(false);
+  const [scannerMode, setScannerMode] = useState<'inspect_product' | 'fridge'>('inspect_product');
   const [isTechniquesOpen, setIsTechniquesOpen] = useState(false);
   const [voiceContext, setVoiceContext] = useState<{
     recipeTitle?: string;
@@ -272,7 +273,10 @@ export default function App() {
               setAppMode('complete');
               setActiveTab('cocinar');
             }}
-            onOpenScanner={() => setIsFridgeScannerOpen(true)}
+            onOpenScanner={(mode = 'inspect_product') => {
+              setScannerMode(mode);
+              setIsFridgeScannerOpen(true);
+            }}
             onOpenTechniques={() => setIsTechniquesOpen(true)}
           />
         )}
@@ -358,6 +362,7 @@ export default function App() {
       {/* Escáner de Nevera con Cámara Multimodal */}
       <FridgeScannerModal
         isOpen={isFridgeScannerOpen}
+        initialMode={scannerMode}
         onClose={() => setIsFridgeScannerOpen(false)}
         onStartCookingRecipe={(recipe) => {
           setSelectedRecipeForCooking(recipe);

@@ -270,6 +270,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const recognitionRef = useRef<any>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const autoListenTimeoutRef = useRef<any>(null);
+  const isSpeakingRef = useRef<boolean>(false);
+  const lastChefSpokenTextRef = useRef<string>('');
 
   // Pedir sugerencia proactiva del Chef según memorias, errores y contexto actual
   const handleRequestProactiveTip = async () => {
@@ -549,9 +551,25 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       };
 
       recognition.onresult = (event: any) => {
+        // REGLA CRÍTICA ANTI-LOOP: Si el Chef está hablando o reproduciendo audio, ignorar el micrófono
+        if (isSpeakingRef.current) {
+          return;
+        }
+
         const transcript = Array.from(event.results)
           .map((result: any) => result[0].transcript)
           .join('');
+
+        // FILTRO DE ECO ACÚSTICO: Si el micrófono escucha las mismas palabras que dijo el Chef, descartar
+        if (lastChefSpokenTextRef.current && transcript.trim().length > 6) {
+          const normT = transcript.toLowerCase().trim();
+          const normChef = lastChefSpokenTextRef.current.toLowerCase();
+          if (normChef.includes(normT) || normT.includes(normChef)) {
+            console.log('Chef Cero: Eco acústico del altavoz ignorado con éxito.');
+            return;
+          }
+        }
+
         setInputQuery(transcript);
         pendingTranscriptRef.current = transcript;
 
@@ -821,9 +839,18 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       };
 
       setMessages((prev) => [...prev, chefMsg]);
+      lastChefSpokenTextRef.current = chefReplyText;
 
-      // Reproducir voz nativa con Gemini TTS y reactivar conversación continua al terminar
+      // Abortar micrófono de inmediato mientras el Chef habla para evitar escuchar sus propios altavoces
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (_) {}
+      }
+
       setIsSpeaking(true);
+      isSpeakingRef.current = true;
+
       speakSpanishText(chefReplyText, {
         speaker: 'Chef Cero',
         badge: isSilent ? 'Modo Silencioso' : 'Voz Nativa en Vivo',
@@ -831,27 +858,58 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         audioMimeType: data.audioMimeType,
         onEnd: () => {
           setIsSpeaking(false);
-          // Si el modo conversación continua está activo y no es silencioso, abrir micrófono automáticamente
+          isSpeakingRef.current = false;
+          // Si el modo conversación continua está activo y no es silencioso, esperar 1200ms para limpiar ecos antes de escuchar
           if (isContinuousMode && !isSilent) {
             autoListenTimeoutRef.current = setTimeout(() => {
-              startListeningSafe();
-            }, 700);
+              if (!isSpeakingRef.current) {
+                startListeningSafe();
+              }
+            }, 1200);
           }
         },
       });
     } catch (err) {
       console.error('Chat error:', err);
+
+      // Respuesta dinámica cálida y útil adaptada a la consulta (cero alarmismo ni bucle infinito)
+      let fallbackText = 'Aquí estoy contigo. Para cualquier preparación, recuerda empezar con los ingredientes listos en platitos antes de prender el fuego. ¿Tienes alguna duda con la llama o los tiempos?';
+      const q = text.toLowerCase();
+      if (q.includes('papa') || q.includes('carne')) {
+        fallbackText = '¡Excelente elección! Para unas papas fritas crujientes con carne: primero corta las papas en bastones y sécalas bien con un paño limpio para que doren crocantes. La carne séllala a fuego medio-alto 2 minutos por lado para que quede jugosa.';
+      } else if (q.includes('arroz')) {
+        fallbackText = 'Para el arroz blanco perfecto: 1 taza de arroz por 2 de agua caliente. Al hervir, pon fuego mínimo tapado por 20 minutos sin destapar.';
+      } else if (q.includes('huevo')) {
+        fallbackText = 'Para huevos revueltos cremosos: fuego bien bajo, revuelve suavemente con cuchara de madera y apaga la estufa cuando aún se vean brillantes.';
+      }
+
       const fallbackMsg: ChatMessage = {
         id: String(Date.now() + 2),
         sender: 'chef',
-        text: '¡Ojo con la hornilla! Si algo huele a quemado o notas mucho humo, retira la sartén hacia una hornilla fría y baja el fuego mientras revisamos.',
+        text: fallbackText,
         timestamp: 'Ahora',
       };
       setMessages((prev) => [...prev, fallbackMsg]);
+      lastChefSpokenTextRef.current = fallbackText;
+
+      // Abortar micrófono para no captar la voz del fallback
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (_) {}
+      }
+
+      setIsSpeaking(true);
+      isSpeakingRef.current = true;
+
       speakSpanishText(fallbackMsg.text, {
         speaker: 'Chef Cero',
         badge: isSilent ? 'Modo Silencioso' : 'Voz Latinoamericana',
-        isEmergency: true,
+        isEmergency: false,
+        onEnd: () => {
+          setIsSpeaking(false);
+          isSpeakingRef.current = false;
+        },
       });
     } finally {
       setIsLoading(false);

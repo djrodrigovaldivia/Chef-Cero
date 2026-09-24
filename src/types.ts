@@ -232,6 +232,15 @@ export interface PantrySubstitute {
   reason: string;
 }
 
+export interface VisualTextureCue {
+  colorName: string;            // Ej: "Dorado ámbar brillante" o "Translúcido nacarado"
+  colorHex?: string;            // Código hexadecimal primario para swatches
+  accentHex?: string;           // Código hexadecimal secundario para degradados
+  textureDescription: string;   // Ej: "Cremoso, untuoso, napando la cuchara de madera"
+  donenessCheck: string;        // Ej: "Al pasar la espátula se abre un surco limpio que tarda 2s en cerrarse"
+  visualWarning?: string;       // Ej: "Si ves bordes oscuros o humo blanco, baja de inmediato la llama"
+}
+
 export interface RecipeStep {
   stepNumber: number;
   title: string;
@@ -246,6 +255,9 @@ export interface RecipeStep {
     smell?: string;
   };
   whyItWorks?: string;
+  stepImageUrl?: string;          // Foto o referencia visual de cómo debe verse este paso en la sartén/tabla
+  stepVisualCueLabel?: string;    // Descripción breve de lo que debes ver con tus ojos en este momento
+  visualCue?: VisualTextureCue;   // Marcador dinámico del asistente: color, textura y prueba visual
 }
 
 export interface Recipe {
@@ -256,6 +268,8 @@ export interface Recipe {
   totalTimeMinutes: number;
   difficulty: string;
   imageUrl?: string;
+  finishGalleryUrls?: string[];    // 1 a 3 fotos de cómo debe lucir el plato final terminado y emplatado
+  finishVisualCheckpoints?: string[]; // Puntos visuales clave de éxito (color, textura, brillo)
   safetyAlerts: string[];
   miseEnPlace: string[];
   heatGuideExplanation: string;

@@ -100,6 +100,16 @@ export const STARTER_RECIPES: Recipe[] = [
       },
     ],
     imageUrl: 'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=800&q=80',
+    finishGalleryUrls: [
+      'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1536304993881-ff6e9eefa2a6?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1594998893017-36147cbcae05?auto=format&fit=crop&w=800&q=80',
+    ],
+    finishVisualCheckpoints: [
+      'Granos individuales largos, blancos y bien separados con brillo tenue.',
+      'Olla sin costra negra carbonizada en el fondo.',
+      'Textura suave y tierna al morder, sin dureza al centro del grano.',
+    ],
     safetyAlerts: [
       'Al destapar la olla, inclina la tapa hacia el lado contrario a tu cuerpo para no quemarte con el vapor hirviendo.',
       'El fuego bajo debe ser verdaderamente bajo: la llama más pequeña posible de la hornalla más pequeña.',
@@ -120,6 +130,8 @@ export const STARTER_RECIPES: Recipe[] = [
         instruction: 'Confirma que tienes el agua caliente y los ingredientes listos antes de tocar la estufa.',
         tip: 'Si tienes que salir a buscar la sal mientras el arroz se sofríe, se quemará en segundos.',
         heatLevel: 'apagado',
+        stepImageUrl: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=600&q=80',
+        stepVisualCueLabel: 'Así debe verse: tazas y platitos listos con la hornalla apagada.',
         sensoryCues: {
           sight: 'Todos los ingredientes medidos en platitos o tazas al alcance de la mano.',
           sound: 'Silencio absoluto, estufa apagada.',
@@ -135,6 +147,8 @@ export const STARTER_RECIPES: Recipe[] = [
         heatLevel: 'medio',
         timerSeconds: 90,
         timerLabel: 'Nacarar arroz',
+        stepImageUrl: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80',
+        stepVisualCueLabel: 'Punto exacto: los granos brillan translúcidos sin llegar a tostarse oscuros.',
         sensoryCues: {
           sound: 'Chisporroteo suave y rítmico de los granos al chocar con la cuchara y el fondo.',
           sight: 'Los granos pasan de blanco tiza a una textura perlada y translúcida como cristal.',
@@ -165,6 +179,8 @@ export const STARTER_RECIPES: Recipe[] = [
         heatLevel: 'bajo',
         timerSeconds: 900,
         timerLabel: 'Cocción tapada a fuego mínimo',
+        stepImageUrl: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80',
+        stepVisualCueLabel: 'Tapa sellada sin destapar con llama corona azul mínima.',
         sensoryCues: {
           sound: 'Susurro leve y continuo bajo la tapa; si deja de sonar por completo o huele a tostado intenso, la llama está muy fuerte.',
           sight: 'Vapor fino escapando por la válvula o borde de la tapa sin borbotones descontrolados.',
@@ -193,6 +209,8 @@ export const STARTER_RECIPES: Recipe[] = [
         instruction: 'Destapa la olla con cuidado. Con un tenedor (no con cuchara), raspa suavemente la superficie de abajo hacia arriba para soltar los granos.',
         tip: '¡Felicidades! Has conquistado el arroz sin quemar el fondo.',
         heatLevel: 'apagado',
+        stepImageUrl: 'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=600&q=80',
+        stepVisualCueLabel: 'Plato final: granos brillantes, esponjosos y sueltos al tacto con tenedor.',
         sensoryCues: {
           sound: 'Leve despegue suave de los granos individuales.',
           sight: 'Granos alargados, brillantes y perfectamente separados uno a uno.',
