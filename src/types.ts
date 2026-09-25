@@ -331,3 +331,38 @@ export interface ShoppingItem {
   checked: boolean;
   recipeSource?: string;
 }
+
+export interface SignatureDishCreationRequest {
+  creationMode: 'guided' | 'free_prompt';
+  // Guided mode inputs
+  concept?: string;
+  heroIngredient?: string;
+  technique?: string;
+  flavorProfile?: string;
+  textureContrast?: string;
+  creativeRisk?: 'equilibrado' | 'audaz' | 'vanguardista';
+  // Free prompt mode input
+  freePrompt?: string;
+}
+
+export interface SignatureDish extends Recipe {
+  isSignatureDish: boolean;
+  chefConcept: string;
+  storyNarrative: string;
+  heroTechnique: string;
+  sensoryContrast: {
+    texture: string;
+    temperature: string;
+    acidityVsFat: string;
+  };
+  sommelierPairing: {
+    beverage: string;
+    nonAlcoholic: string;
+    whyItHarmonizes: string;
+  };
+  authorNotes?: string;
+  personalRating?: number; // 1 to 5
+  timesCooked?: number;
+  createdAt: string;
+}
+

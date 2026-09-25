@@ -53,6 +53,7 @@ interface CookingModeProps {
   onLearnFact?: (category: 'fuego' | 'gustos' | 'equipamiento' | 'habito' | 'fortaleza', fact: string) => void;
   externalSelectedRecipe?: Recipe | null;
   onRecipeConsumed?: () => void;
+  onNavigateToAutor?: () => void;
 }
 
 export const CookingMode: React.FC<CookingModeProps> = ({
@@ -64,6 +65,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   onLearnFact,
   externalSelectedRecipe,
   onRecipeConsumed,
+  onNavigateToAutor,
 }) => {
   const [recipesList, setRecipesList] = useState<Recipe[]>(STARTER_RECIPES);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe>(STARTER_RECIPES[0]);
@@ -1019,22 +1021,33 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {onNavigateToAutor && (
+                  <button
+                    onClick={onNavigateToAutor}
+                    className="px-3.5 py-3 bg-gradient-to-r from-purple-800 to-indigo-900 hover:from-purple-900 hover:to-indigo-950 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer ring-2 ring-purple-400/40"
+                    title="Ir a la sección de Recetas de Autor generadas con IA"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>Taller de Autor (IA)</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setLevelFilter(5)}
-                  className="px-3.5 py-3 bg-gradient-to-r from-purple-800 to-amber-700 hover:from-purple-900 hover:to-amber-800 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                  className="px-3.5 py-3 bg-stone-900 hover:bg-stone-800 text-amber-300 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer border border-amber-500/30"
                   title="Acceso directo a recetas únicas de alta cocina para expertos"
                 >
                   <span>👑</span>
-                  <span>Recetario para Expertos</span>
+                  <span>Recetario N5</span>
                 </button>
 
                 <button
                   onClick={() => setShowGeneratorModal(true)}
-                  className="px-4 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                  className="px-3.5 py-3 bg-stone-100 hover:bg-stone-200 text-stone-900 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer border border-stone-300"
                 >
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>Crear con 3 ingredientes...</span>
+                  <span>🍳</span>
+                  <span>Crear con 3 ingredientes</span>
                 </button>
               </div>
             </div>

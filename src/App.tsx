@@ -9,12 +9,15 @@ import { VisualDictionary } from './components/VisualDictionary';
 import { KitchenStorageMap } from './components/KitchenStorageMap';
 import { ChefNotebook } from './components/ChefNotebook';
 import { LeftoversRescueTab } from './components/LeftoversRescueTab';
+import { SignatureDishesTab } from './components/SignatureDishesTab';
 import { ShoppingListModal } from './components/ShoppingListModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
+import { FloatingVoiceBar } from './components/FloatingVoiceBar';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AccessibleSubtitles } from './components/AccessibleSubtitles';
 import { registerChefServiceWorker } from './utils/pushNotifications';
 import { Mic, ChefHat, Sparkles } from 'lucide-react';
+
 
 const INITIAL_PROFILE: UserProfile = {
   name: 'Aprendiz Culinario',
@@ -293,6 +296,18 @@ export default function App() {
                 onLearnFact={handleLearnFact}
                 externalSelectedRecipe={selectedRecipeForCooking}
                 onRecipeConsumed={() => setSelectedRecipeForCooking(null)}
+                onNavigateToAutor={() => setActiveTab('autor')}
+              />
+            )}
+
+            {activeTab === 'autor' && (
+              <SignatureDishesTab
+                userProfile={userProfile}
+                onCookRecipe={(recipe) => {
+                  setSelectedRecipeForCooking(recipe);
+                  setActiveTab('cocinar');
+                }}
+                onLearnFact={handleLearnFact}
               />
             )}
 
@@ -314,33 +329,15 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating hands-free trigger button (always accessible while cooking with dirty hands) */}
-      <aside
-        id="floating-voice-bar"
-        aria-label="Asistente de voz manos libres"
-        className="fixed bottom-5 right-5 z-30"
-      >
-        <button
-          onClick={() => {
-            setVoiceContext(undefined);
-            setIsVoiceOpen(true);
-          }}
-          className="group flex items-center gap-2.5 px-4 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-full shadow-2xl border border-stone-700 hover:scale-105 transition-all ring-4 ring-amber-400/40"
-        >
-          <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-stone-950 font-bold group-hover:scale-110 transition-transform">
-            <Mic className="w-4 h-4 animate-pulse" />
-          </div>
-          <div className="text-left pr-1">
-            <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1">
-              <span>Chef Cero en Vivo</span>
-              <Sparkles className="w-3 h-3 text-amber-400" />
-            </div>
-            <div className="text-xs font-semibold text-stone-200">
-              ¿Dudas o humo? Toca para hablar
-            </div>
-          </div>
-        </button>
-      </aside>
+      {/* Floating hands-free trigger button with real-time audio waveform visualizer */}
+      <FloatingVoiceBar
+        onOpenVoice={() => {
+          setVoiceContext(undefined);
+          setIsVoiceOpen(true);
+        }}
+        isVoiceOpen={isVoiceOpen}
+      />
+
 
       {/* Hands-Free Voice Assistant Modal con Modo Conversacional Continuo y Memoria */}
       <VoiceAssistantModal

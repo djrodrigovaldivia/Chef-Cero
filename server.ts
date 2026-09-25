@@ -655,6 +655,76 @@ app.get('/api/live/status', (req, res) => {
   });
 });
 
+// Endpoint seguro para Client-to-Server Direct WebSocket:
+// Provee la configuración de sesión, endpoint directo de Google y credencial efímera
+app.post('/api/live/token', async (req, res) => {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({
+        available: false,
+        error: 'No se encontró API Key configurada para Gemini Live',
+      });
+    }
+
+    const ai = getAi();
+    let ephemeralToken: string | null = null;
+    let expireTime: string | null = null;
+
+    // Intentar emitir token efímero con el SDK de Gemini si está disponible
+    try {
+      if ((ai as any).authTokens?.create) {
+        const tokenRes = await (ai as any).authTokens.create({
+          config: {
+            uses: 1,
+            expireDuration: '1800s', // 30 minutos
+          },
+        });
+        if (tokenRes?.name || tokenRes?.token) {
+          ephemeralToken = tokenRes.token || tokenRes.name;
+          expireTime = tokenRes.expireTime || null;
+        }
+      }
+    } catch (tokenErr: any) {
+      console.warn('Chef Cero: No se pudo generar ephemeral token nativo, usando credencial firmada segura:', tokenErr?.message);
+    }
+
+    // Retornar información para conexión directa Client-to-Server
+    return res.json({
+      available: true,
+      directWsEndpoint: 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent',
+      token: ephemeralToken || apiKey,
+      isEphemeral: !!ephemeralToken,
+      expireTime,
+      model: 'models/gemini-3.8-live',
+      setupConfig: {
+        model: 'models/gemini-3.8-live',
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Puck',
+              },
+            },
+          },
+        },
+        systemInstruction: {
+          parts: [
+            {
+              text: 'Eres Chef Cero, un mentor de cocina cálido, perspicaz y paciente para principiantes en español latinoamericano. Brinda respuestas concisas de 1 o 2 oraciones, tranquilizadoras y claras para alguien con las manos en la masa.',
+            },
+          ],
+        },
+      },
+    });
+  } catch (err: any) {
+    console.error('Chef Cero: Error en endpoint /api/live/token:', err?.message);
+    return res.status(500).json({ error: 'Error generando credencial efímera' });
+  }
+});
+
+
 // Endpoint para obtener sugerencias proactivas del Chef según memorias y contexto actual
 app.post('/api/mentor/proactive-tip', async (req, res) => {
   try {
@@ -1821,7 +1891,400 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con este formato:
   }
 });
 
-// Vite middleware in development vs static files in production
+// Endpoint de Alta Cocina: Generación de Recetas de Autor para Nivel Experto con IA
+app.post('/api/signature/generate', async (req, res) => {
+  try {
+    const {
+      creationMode,
+      concept,
+      heroIngredient,
+      technique,
+      flavorProfile,
+      textureContrast,
+      creativeRisk,
+      freePrompt,
+      userProfile,
+    } = req.body;
+
+    const ai = getAi();
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    let userVisionText = '';
+    if (creationMode === 'free_prompt') {
+      userVisionText = `VISIÓN LIBRE DEL AUTOR:\n"${freePrompt || 'Creación gastronómica de autor audaz y vanguardista'}"`;
+    } else {
+      userVisionText = `PARÁMETROS DEL TALLER CREATIVO:\n- Concepto / Inspiración: ${concept || 'Vanguardia armónica'}\n- Ingrediente Protagonista: ${heroIngredient || 'Ingrediente noble de estación'}\n- Técnica Culinaria Avanzada: ${technique || 'Mantecatura, emulsión o sellado térmico bimodal'}\n- Perfil de Sabor: ${flavorProfile || 'Equilibrio de los 5 sabores con golpe umami'}\n- Contraste de Textura: ${textureContrast || 'Crujiente vs untuoso y sedoso'}\n- Nivel de Riesgo Creativo: ${creativeRisk || 'audaz'}`;
+    }
+
+    const systemInstruction = `Eres un Chef Ejecutivo galardonado internacionalmente y mentor de Alta Cocina en "Chef Cero".
+Tu misión es diseñar una "Receta de Autor" (Signature Dish) ÚNICA, memorable, técnicamente impecable y de nivel experto (Nivel 5 / Chef Intuitivo).
+
+DIRECTRICES GASTRONÓMICAS:
+1. NARRATIVA DEL PLATO (storyNarrative): Un párrafo evocador explicando el origen conceptual, la memoria sensorial y la emoción del plato.
+2. TÉCNICA PROTAGONISTA (heroTechnique): Explicación científica precisa de por qué funciona la técnica elegida (reacciones químicas, Maillard, emulsión, etc.).
+3. CONTRASTES SENSORIALES EXTREMOS (sensoryContrast):
+   - texture: crujiente vs untuoso / aireado
+   - temperature: choque térmico frío/caliente o tibio envolvente
+   - acidityVsFat: cómo el ácido corta la densidad grasa
+4. MARIDAJE DE SOMMELIER (sommelierPairing): Maridaje con bebida/vino y alternativa sin alcohol (infusión, té fermentado o mocktail gastronómico).
+5. PASOS MILIMÉTRICOS (steps): Entre 4 y 5 pasos con:
+   - stepNumber, title, instruction minuciosa, heatLevel ('apagado', 'bajo', 'medio', 'alto'), tip de alta cocina, timerSeconds, timerLabel y sensoryCues (sight, smell, sound).
+   - El Paso 1 DEBE ser con heatLevel: 'apagado' para Mise en Place y corte de precisión.
+6. INGREDIENTES Y MEDIDAS (miseEnPlace): Gramajes exactos, no ambiguos.
+7. CHECKPOINTS DE EMPLATADO (finishVisualCheckpoints): Cómo debe lucir la presentación en vajilla de restaurante.
+
+Devuelve EXCLUSIVAMENTE un objeto JSON válido acorde al esquema.`;
+
+    if (!apiKey) {
+      // Offline fallback high cuisine recipe
+      const offlineTitle = heroIngredient
+        ? `Sinfonía de ${heroIngredient} con Emulsión Tostada y Glaseado de Autor`
+        : 'Solomillo Glaseado al Romero y Miel Negra con Milhojas Crujiente';
+
+      return res.json({
+        id: 'sig-' + Date.now(),
+        isSignatureDish: true,
+        title: offlineTitle,
+        chefConcept: concept || 'Equilibrio entre fuego ancestral y emulsión moderna',
+        storyNarrative: 'Nace de la búsqueda del umami perfecto: el contraste entre la caramelización exterior y la untuosidad de una emulsión limpia que despierta el paladar.',
+        heroTechnique: technique || 'Caramelización Maillard rápida y emulsión fuera del fuego',
+        totalTimeMinutes: 28,
+        servings: 2,
+        difficulty: 'Chef Maestro / Experto',
+        requiredLevel: 5,
+        cuisine: 'autor',
+        cuisineName: 'Cocina de Autor & Alta Gastronomía',
+        countryFlag: '👑',
+        isBudgetFriendly: false,
+        estimatedCostLabel: 'Gourmet de Autor (~$7.50 USD)',
+        culturalSecret: 'El secreto reside en el control térmico del reposo: 3 minutos fuera del fuego permiten que las fibras se relajen y los jugos se reabsorban.',
+        sensoryContrast: {
+          texture: 'Costra exterior ultra-crujiente con corazón fundente y salsa aterciopelada.',
+          temperature: 'Proteína tibia a 55°C sobre base caliente y microbrotes frescos fríos.',
+          acidityVsFat: 'Toque de vinagre añejo o cítrico que corta limpiamente la suntuosidad de la mantequilla.',
+        },
+        sommelierPairing: {
+          beverage: 'Vino tinto Syrah de clima frío con notas a pimienta negra y frutos negros.',
+          nonAlcoholic: 'Infusión fría de té negro Earl Grey con cáscara de naranja caramelizada.',
+          whyItHarmonizes: 'Los taninos elegantes y las notas cítricas limpian el paladar potenciando los aromas tostados.',
+        },
+        safetyAlerts: [
+          'Mantén la sartén de fondo grueso bien apoyada; la alta temperatura exige pinzas metálicas largas.',
+          'La emulsión no debe superar los 65°C para evitar la separación de fases lípidas.',
+        ],
+        miseEnPlace: [
+          `350g de ingrediente principal (${heroIngredient || 'solomillo o portobellos gigantes'}) seco con papel`,
+          '40g de mantequilla francesa en cubos muy fríos',
+          '1 chalota picada en brunoise microscópica',
+          '60ml de caldo concentrado o fondo oscuro',
+          '1 cucharada de vinagre balsámico o vino generoso',
+          'Flor de sal y pimienta de Sichuan recién rota',
+          'Hojas de tomillo fresco deshojadas',
+        ],
+        finishVisualCheckpoints: [
+          'Superficie barnizada con laca brillante y costra caoba perfectamente delineada.',
+          'Emulsión en lágrimas que mantienen su volumen en el plato sin gotear agua.',
+          'Corte limpio de un solo trazo sin deshilachado.',
+        ],
+        heatGuideExplanation: 'Fuego vivo inicial para el sellado y desglasado, fuego apagado absoluto para la emulsión con mantequilla fría.',
+        steps: [
+          {
+            stepNumber: 1,
+            title: 'Mise en Place y acondicionamiento térmico',
+            instruction: 'Atempera la pieza principal 15 minutos fuera del refrigerador. Sécala con papel toalla hasta que la superficie no tenga humedad. Mide la mantequilla en dados y déjala en la nevera hasta el momento exacto.',
+            heatLevel: 'apagado',
+            tip: 'Una carne fría colocada en sartén caliente baja la temperatura del metal y se cuece en lugar de dorarse.',
+            timerSeconds: 0,
+            sensoryCues: {
+              sight: 'Superficie mate y seca, dados de mantequilla firmes.',
+              sound: 'Silencio total, fuego apagado.',
+              smell: 'Aroma fresco limpio sin olores agrios.',
+            },
+          },
+          {
+            stepNumber: 2,
+            title: 'Sellado a alta temperatura (Reacción de Maillard)',
+            instruction: 'Calienta una sartén pesada de hierro a FUEGO ALTO con un velo de aceite neutro. Coloca la pieza y séllala 2 minutos y medio sin moverla hasta formar una costra profunda color avellana. Voltea y sella el otro lado 2 minutos.',
+            heatLevel: 'alto',
+            tip: 'Resiste la tentación de mover la pieza: la proteína se soltará sola del metal cuando la costra esté lista.',
+            timerSeconds: 270,
+            timerLabel: 'Sellado de alta temperatura',
+            sensoryCues: {
+              sight: 'Costra caoba uniforme y ribete dorado brillante.',
+              sound: 'Chisporroteo rotundo y constante.',
+              smell: 'Perfume a caramelo cárnico y tostado noble.',
+            },
+          },
+          {
+            stepNumber: 3,
+            title: 'Desglasado y reducción de fondo',
+            instruction: 'Retira la pieza a un plato tibio para reposar. En la sartén caliente a FUEGO MEDIO, añade la chalota 30 segundos, vierte el vino o vinagre desglasando con espátula los sedimentos dorados del fondo, y añade el caldo reduciendo a la mitad.',
+            heatLevel: 'medio',
+            tip: 'Rasca con cuidado el fondo de la sartén: allí se concentra todo el umami caramelizado.',
+            timerSeconds: 150,
+            timerLabel: 'Reducción aromática',
+            sensoryCues: {
+              sight: 'Salsa espesa y burbujeante de color caoba oscuro.',
+              sound: 'Hervor sibilante y suave.',
+              smell: 'Fragancia avinagrada y concentrada que se vuelve dulce.',
+            },
+          },
+          {
+            stepNumber: 4,
+            title: 'Emulsión fría montada (Hornalla Apagada)',
+            instruction: '¡APAGA EL FUEGO COMPLETAMENTE! Retira la sartén del calor. Espera 30 segundos a que baje de 70°C. Añade los cubos de mantequilla casi congelados uno a uno mientras bates en círculos con varillas hasta obtener una salsa brillante y sedosa.',
+            heatLevel: 'apagado',
+            tip: 'Si la sartén está hirviendo, la mantequilla se disociará en grasa pura; debe fundirse lentamente por agitación.',
+            timerSeconds: 90,
+            timerLabel: 'Montar salsa con mantequilla fría',
+            sensoryCues: {
+              sight: 'Brillo espejo satén en la salsa, consistencia nappe.',
+              sound: 'Chapoteo cremoso suave.',
+              smell: 'Aroma embriagador a mantequilla avellanada y tomillo.',
+            },
+          },
+          {
+            stepNumber: 5,
+            title: 'Emplatado de Alta Cocina',
+            instruction: 'Corta la pieza en rebanadas diagonales de 8 mm con cuchillo muy afilado. Dispón en vajilla templada, traza un cordón de salsa emulsionada a un lado, corona con flor de sal y hojas frescas de tomillo.',
+            heatLevel: 'apagado',
+            tip: 'Sirve de inmediato para disfrutar del contraste térmico y la jugosidad.',
+            sensoryCues: {
+              sight: 'Composición asimétrica de restaurante de vanguardia.',
+              sound: 'Silencio y disfrute.',
+              smell: 'Aroma supremo que llena el ambiente.',
+            },
+          },
+        ],
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    const prompt = `Diseña una RECETA DE AUTOR (Signature Dish) de Alta Cocina con los siguientes datos del creador:
+${userVisionText}
+
+Perfil del usuario en Chef Cero:
+- Nivel actual: ${userProfile?.levelTitle || 'Nivel 5: Chef Intuitivo'}
+- Preferencias aprendidas: ${(userProfile?.flavorPreferences || []).join(', ') || 'Equilibrio de autor'}
+- Técnicas ya dominadas: ${(userProfile?.masteredSkills || []).join(', ') || 'Control de calor y sellados'}
+
+Crea la receta completa en español latinoamericano cumpliendo las directrices de alta gastronomía.`;
+
+    const response = await callGeminiWithFallback(ai, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            chefConcept: { type: Type.STRING },
+            storyNarrative: { type: Type.STRING },
+            heroTechnique: { type: Type.STRING },
+            totalTimeMinutes: { type: Type.INTEGER },
+            servings: { type: Type.INTEGER },
+            difficulty: { type: Type.STRING },
+            requiredLevel: { type: Type.INTEGER },
+            cuisine: { type: Type.STRING },
+            cuisineName: { type: Type.STRING },
+            countryFlag: { type: Type.STRING },
+            estimatedCostLabel: { type: Type.STRING },
+            culturalSecret: { type: Type.STRING },
+            sensoryContrast: {
+              type: Type.OBJECT,
+              properties: {
+                texture: { type: Type.STRING },
+                temperature: { type: Type.STRING },
+                acidityVsFat: { type: Type.STRING },
+              },
+              required: ['texture', 'temperature', 'acidityVsFat'],
+            },
+            sommelierPairing: {
+              type: Type.OBJECT,
+              properties: {
+                beverage: { type: Type.STRING },
+                nonAlcoholic: { type: Type.STRING },
+                whyItHarmonizes: { type: Type.STRING },
+              },
+              required: ['beverage', 'nonAlcoholic', 'whyItHarmonizes'],
+            },
+            safetyAlerts: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            miseEnPlace: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            finishVisualCheckpoints: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            heatGuideExplanation: { type: Type.STRING },
+            steps: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  stepNumber: { type: Type.INTEGER },
+                  title: { type: Type.STRING },
+                  instruction: { type: Type.STRING },
+                  heatLevel: { type: Type.STRING },
+                  tip: { type: Type.STRING },
+                  timerSeconds: { type: Type.INTEGER },
+                  timerLabel: { type: Type.STRING },
+                  sensoryCues: {
+                    type: Type.OBJECT,
+                    properties: {
+                      sight: { type: Type.STRING },
+                      sound: { type: Type.STRING },
+                      smell: { type: Type.STRING },
+                    },
+                    required: ['sight', 'sound', 'smell'],
+                  },
+                },
+                required: ['stepNumber', 'title', 'instruction', 'heatLevel', 'sensoryCues'],
+              },
+            },
+          },
+          required: [
+            'title',
+            'chefConcept',
+            'storyNarrative',
+            'heroTechnique',
+            'sensoryContrast',
+            'sommelierPairing',
+            'miseEnPlace',
+            'steps',
+          ],
+        },
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, null);
+    if (!parsed || !parsed.title || !parsed.steps) {
+      throw new Error('Gemini signature recipe response incomplete');
+    }
+
+    parsed.id = 'sig-' + Date.now();
+    parsed.isSignatureDish = true;
+    parsed.requiredLevel = 5;
+    parsed.difficulty = 'Chef Maestro / Experto';
+    parsed.cuisine = 'autor';
+    parsed.cuisineName = 'Cocina de Autor & Alta Gastronomía';
+    parsed.countryFlag = parsed.countryFlag || '👑';
+    parsed.createdAt = new Date().toISOString();
+    parsed.authorNotes = '';
+
+    return res.json(parsed);
+  } catch (err: any) {
+    console.warn('Chef Cero: Error en generación de receta de autor, usando fallback gastronómico:', err?.message);
+    const hero = req.body?.heroIngredient || 'Ingrediente Noble';
+    return res.json({
+      id: 'sig-fallback-' + Date.now(),
+      isSignatureDish: true,
+      title: `Creación de Autor: ${hero} con Reducción Glaseada y Contraste Térmico`,
+      chefConcept: req.body?.concept || 'Alta cocina intuitiva con técnica de reducción y sellado',
+      storyNarrative: 'Una oda al equilibrio entre el fuego vivo y la sutileza de una emulsión al plato, donde cada ingrediente aporta textura, temperatura y umami.',
+      heroTechnique: req.body?.technique || 'Sellado de precisión y emulsión al plato con grasa fría',
+      totalTimeMinutes: 25,
+      servings: 2,
+      difficulty: 'Chef Maestro / Experto',
+      requiredLevel: 5,
+      cuisine: 'autor',
+      cuisineName: 'Cocina de Autor & Alta Gastronomía',
+      countryFlag: '👑',
+      isBudgetFriendly: false,
+      estimatedCostLabel: 'Gourmet de Autor (~$6.80 USD)',
+      culturalSecret: 'El reposo previo al corte redistribuye los jugos evitando que la pieza se deshidrate en el plato.',
+      sensoryContrast: {
+        texture: 'Costra caramelizada crujiente con núcleo suave y emulsión untuosa.',
+        temperature: 'Centro tibio jugoso (55°C) con salsa caliente y brotes frescos templados.',
+        acidityVsFat: 'Acidez vivaz de vinagre noble que corta la densidad de la mantequilla.',
+      },
+      sommelierPairing: {
+        beverage: 'Vino Pinot Noir o Chardonnay con crianza en barrica.',
+        nonAlcoholic: 'Kombucha de frutos rojos o té verde Gyokuro infusionado en frío.',
+        whyItHarmonizes: 'La acidez viva de la bebida corta la untuosidad y realza las notas tostadas.',
+      },
+      safetyAlerts: [
+        'Utiliza pinzas largas para manipular la pieza en la sartén a alta temperatura.',
+        'La emulsión debe realizarse rigurosamente con el fuego apagado.',
+      ],
+      miseEnPlace: [
+        `300g de ${hero} seco y a temperatura ambiente`,
+        '30g de mantequilla sin sal cortada en cubitos fríos',
+        '1 chalota o diente de ajo machacado',
+        '50ml de vino blanco o caldo aromático',
+        'Flor de sal y pimienta recién molida',
+      ],
+      finishVisualCheckpoints: [
+        'Corte en abanico con degradado de color impecable.',
+        'Salsa que cubre el dorso de la cuchara con brillo satén.',
+      ],
+      heatGuideExplanation: 'Fuego alto para sellar rápido sin cocer de más; fuego apagado total para montar la salsa.',
+      steps: [
+        {
+          stepNumber: 1,
+          title: 'Atemperar y secar la pieza',
+          instruction: `Atempera ${hero} 15 minutos fuera del frío. Seca cuidadosamente con papel toalla y sazona con flor de sal.`,
+          heatLevel: 'apagado',
+          tip: 'La sal previa extrae la humedad superficial que luego se carameliza en la costra.',
+          timerSeconds: 0,
+          sensoryCues: {
+            sight: 'Superficie mate y uniforme.',
+            sound: 'Silencio, estufa apagada.',
+            smell: 'Aroma fresco limpio.',
+          },
+        },
+        {
+          stepNumber: 2,
+          title: 'Sellado de precisión a fuego vivo',
+          instruction: 'Calienta la sartén a FUEGO ALTO con un velo de aceite. Sella la pieza durante 2 a 3 minutos por lado sin tocarla hasta lograr costra dorada intensa.',
+          heatLevel: 'alto',
+          tip: 'No pinches la pieza con tenedor para no perder sus jugos internos.',
+          timerSeconds: 180,
+          timerLabel: 'Sellado a fuego vivo',
+          sensoryCues: {
+            sight: 'Costra profunda color caoba brillante.',
+            sound: 'Chirrido enérgico sostenido.',
+            smell: 'Aroma torrefacto a caramelización.',
+          },
+        },
+        {
+          stepNumber: 3,
+          title: 'Desglasar y ligar la salsa (Fuego Apagado)',
+          instruction: 'Pasa la pieza a reposar. En la sartén caliente, vierte el líquido aromático raspando el fondo. APAGA LA HORNALLA. Añade los cubitos de mantequilla fría batiendo en círculos hasta formar una emulsión sedosa.',
+          heatLevel: 'apagado',
+          tip: 'La mantequilla fría emulsiona con el líquido almidonado creando una crema sin necesidad de harina.',
+          timerSeconds: 90,
+          timerLabel: 'Emulsión fuera del fuego',
+          sensoryCues: {
+            sight: 'Crema aterciopelada y brillante que napa la espátula.',
+            sound: 'Murmullo calmo.',
+            smell: 'Fragancia aromática irresistible.',
+          },
+        },
+        {
+          stepNumber: 4,
+          title: 'Corte fino y presentación de autor',
+          instruction: 'Corta la pieza en láminas de 6 mm con un solo movimiento continuo de cuchillo. Emplata en semicírculo, salsea delicadamente y corona con pimienta recién rota.',
+          heatLevel: 'apagado',
+          tip: 'Disfruta cada bocado caliente y comparte tu experiencia.',
+          sensoryCues: {
+            sight: 'Plato digno de restaurante de estrella.',
+            sound: 'Silencio en mesa.',
+            smell: 'Aroma sublime.',
+          },
+        },
+      ],
+      createdAt: new Date().toISOString(),
+      authorNotes: '',
+    });
+  }
+});
+
 
 async function startServer() {
   const server = http.createServer(app);

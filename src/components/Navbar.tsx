@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChefHat, Mic, BookOpen, MapPin, Award, Flame, Bell, BellRing, Check, VolumeX, Volume2, Recycle, ShoppingCart, MoreHorizontal, Sparkles, ChevronDown, Camera, GraduationCap } from 'lucide-react';
+import { ChefHat, Mic, BookOpen, MapPin, Award, Flame, Bell, BellRing, Check, VolumeX, Volume2, Recycle, ShoppingCart, MoreHorizontal, Sparkles, ChevronDown, Camera, GraduationCap, Coins } from 'lucide-react';
 import { UserProfile } from '../types';
 import { getNotificationPermission, requestNotificationPermission, sendTestPushNotification } from '../utils/pushNotifications';
 import { useSilentMode } from '../utils/useSilentMode';
 
-export type ActiveTab = 'cocinar' | 'sobras' | 'diccionario' | 'mapa' | 'cuaderno';
+export type ActiveTab = 'cocinar' | 'autor' | 'sobras' | 'diccionario' | 'mapa' | 'cuaderno';
 
 interface NavbarProps {
   appMode: 'simple' | 'complete';
@@ -253,6 +253,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </span>
                   </button>
 
+                  <button
+                    onClick={() => handleToolItemClick('cuaderno')}
+                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2 font-medium">
+                      <Coins className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Presupuesto Live & Tokens</span>
+                    </span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
+                      Control
+                    </span>
+                  </button>
+
                   <div className="pt-2 border-t border-stone-100 space-y-1">
                     <div className="px-3 py-1 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
                       Preferencias de voz y avisos
@@ -310,6 +323,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Flame className="w-3.5 h-3.5 text-orange-500" />
               <span>Catálogo de Recetas</span>
+            </button>
+
+            <button
+              onClick={() => onSelectTab('autor')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 flex items-center gap-1.5 ${
+                activeTab === 'autor'
+                  ? 'bg-gradient-to-r from-purple-800 to-amber-700 text-white shadow-xs font-black'
+                  : 'text-purple-900 bg-purple-50/70 hover:bg-purple-100 border border-purple-200'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Recetas de Autor (IA)</span>
             </button>
 
             <button

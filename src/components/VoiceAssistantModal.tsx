@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, Send, X, Clock, Flame, ShieldAlert, Sparkles, ChefHat, MessageSquare, HelpCircle, Brain, Trash2, Plus, Check, Radio, Zap, Activity, Wifi, Lightbulb, Compass, ThumbsUp } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, Send, X, Clock, Flame, ShieldAlert, Sparkles, ChefHat, MessageSquare, HelpCircle, Brain, Trash2, Plus, Check, Radio, Zap, Activity, Wifi, Lightbulb, Compass, ThumbsUp, Coins } from 'lucide-react';
 import { UserProfile, ChatMessage, ChefMemoryFact } from '../types';
 import { speakSpanishText, stopSpeaking, playEmergencyAlertSound } from '../utils/audioAlert';
 import { requestNotificationPermission as requestBrowserNotificationPermission } from '../utils/notifications';
@@ -8,6 +8,10 @@ import { GeminiLiveClient, LiveClientState, NetworkQuality, DetectedVoiceTone, P
 import { HandsFreeCookingListener } from '../utils/handsFreeListener';
 import { useVoiceConnection, downsampleTo16kHz } from '../hooks/useVoiceConnection';
 import { ReactiveLiveOrb } from './ReactiveLiveOrb';
+import { DirectWebSocketTutorialModal } from './DirectWebSocketTutorialModal';
+import { audioVisualizerBus } from '../utils/audioVisualizerBus';
+import { tokenBudgetTracker, TokenUsageStats } from '../utils/tokenBudgetTracker';
+import { TokenBudgetMonitor } from './TokenBudgetMonitor';
 
 interface VoiceAssistantModalProps {
   isOpen: boolean;
@@ -62,6 +66,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const { isSilent, toggleSilentMode } = useSilentMode();
   const [emergencyAlert, setEmergencyAlert] = useState<string | null>(null);
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
+  const [showWsTutorial, setShowWsTutorial] = useState<boolean>(false);
 
   // Estados para Modo Manos Sucias (Navegación de pasos por voz de latencia ultra-baja < 50ms)
   const [isDirtyHandsMode, setIsDirtyHandsMode] = useState<boolean>(false);
@@ -179,6 +184,17 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const [networkQuality, setNetworkQuality] = useState<NetworkQuality>('excelente');
   const [networkJitter, setNetworkJitter] = useState<number>(0);
   const [showLatencyDetails, setShowLatencyDetails] = useState<boolean>(false);
+
+  // Estados para Monitoreo Transparente de Tokens y Presupuesto
+  const [tokenStats, setTokenStats] = useState<TokenUsageStats>(() => tokenBudgetTracker.getStats());
+  const [showTokenDetails, setShowTokenDetails] = useState<boolean>(false);
+
+  useEffect(() => {
+    const unsub = tokenBudgetTracker.subscribe((stats) => {
+      setTokenStats(stats);
+    });
+    return () => unsub();
+  }, []);
 
   // Estados para Inteligencia Tonal y Comprensión de Silencios (Paciencia Adaptativa)
   const [detectedTone, setDetectedTone] = useState<DetectedVoiceTone>('calmado');
@@ -367,11 +383,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
 
     voiceConn.disconnect();
+    audioVisualizerBus.detach();
+    tokenBudgetTracker.stopLiveSession();
     setIsGatePassingVoice(false);
     currentLiveUserMsgId.current = null;
     currentLiveChefMsgId.current = null;
     setLatestChefLiveText('');
     setLatestUserLiveText('');
+
   };
 
   /**
@@ -397,6 +416,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         return;
       }
 
+      tokenBudgetTracker.startLiveSession();
+
       // 2. Acceso a micrófono con restricciones de hardware para móviles (AEC nativa)
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -420,8 +441,12 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       const source = inputCtx.createMediaStreamSource(stream);
       sourceNodeRef.current = source;
 
+      // Conectar el stream al bus del visualizador de forma de onda (waveform)
+      audioVisualizerBus.attachStream(stream);
+
       // 5. Highpass Filter @ 85Hz: elimina zumbidos graves de extractores, estufas y vibraciones de mesada
       const highpass = inputCtx.createBiquadFilter();
+
       highpass.type = 'highpass';
       highpass.frequency.value = 85;
       highpass.Q.value = 0.707;
@@ -548,7 +573,11 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       recognition.onstart = () => {
         setIsListening(true);
         setSpeechNotice(null);
+        audioVisualizerBus.setListening(true);
+        audioVisualizerBus.requestMicStream().catch(() => {});
+        window.dispatchEvent(new CustomEvent('chef-cero-voice-state', { detail: { isListening: true } }));
       };
+
 
       recognition.onresult = (event: any) => {
         // REGLA CRÍTICA ANTI-LOOP: Si el Chef está hablando o reproduciendo audio, ignorar el micrófono
@@ -643,6 +672,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
       recognition.onerror = (event: any) => {
         setIsListening(false);
+        audioVisualizerBus.setListening(false);
+        window.dispatchEvent(new CustomEvent('chef-cero-voice-state', { detail: { isListening: false } }));
         if (event.error === 'not-allowed') {
           setSpeechNotice('Acceso al micrófono denegado. Puedes escribir o tocar las consultas rápidas.');
         } else if (event.error === 'no-speech') {
@@ -654,6 +685,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
       recognition.onend = () => {
         setIsListening(false);
+        audioVisualizerBus.setListening(false);
+        window.dispatchEvent(new CustomEvent('chef-cero-voice-state', { detail: { isListening: false } }));
       };
 
       recognitionRef.current = recognition;
@@ -663,6 +696,9 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
     return () => {
       stopSpeaking();
+      audioVisualizerBus.setListening(false);
+      window.dispatchEvent(new CustomEvent('chef-cero-voice-state', { detail: { isListening: false } }));
+
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (silenceProgressIntervalRef.current) clearInterval(silenceProgressIntervalRef.current);
       if (autoListenTimeoutRef.current) {
@@ -1046,6 +1082,23 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                     <Activity className="w-3 h-3 opacity-80" />
                   </button>
                 )}
+
+                {/* Botón de Monitoreo Transparente de Tokens y Tiempo Estimado */}
+                <button
+                  onClick={() => setShowTokenDetails((prev) => !prev)}
+                  title={`Presupuesto de Voz: ~${tokenBudgetTracker.getEstimatedMinutesRemaining(tokenStats)} min restantes (${tokenStats.totalTokensUsed.toLocaleString()} tokens). Clic para ver control de consumo.`}
+                  className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition border ${
+                    isLiveActive
+                      ? 'bg-rose-950/90 text-rose-200 border-rose-500/60 hover:bg-rose-900'
+                      : 'bg-amber-950/60 text-amber-200 border-amber-500/40 hover:bg-amber-900/80'
+                  }`}
+                >
+                  <Coins className={`w-3.5 h-3.5 ${isLiveActive ? 'text-rose-400 animate-spin' : 'text-amber-400'}`} />
+                  <span>~{tokenBudgetTracker.getEstimatedMinutesRemaining(tokenStats)} min</span>
+                  <span className="text-[10px] text-amber-300/80 hidden sm:inline">
+                    ({tokenStats.sessionTokensUsed > 0 ? `+${tokenStats.sessionTokensUsed}` : '0'})
+                  </span>
+                </button>
               </div>
               <p className="text-xs text-amber-100">
                 {currentContext?.recipeTitle ? `Receta activa: ${currentContext.recipeTitle}` : 'Tu mentor de cocina en tiempo real'}
@@ -1117,6 +1170,18 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 {isLiveActive ? 'Live ON' : 'Live'}
               </span>
             </button>
+
+            {/* Botón de Tutorial WebSocket Client-to-Server */}
+            <button
+              onClick={() => setShowWsTutorial(true)}
+              title="Ver tutorial de integración WebSocket Client-to-Server (bypassing backend) para Gemini Live"
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-indigo-700 to-purple-800 hover:from-indigo-600 hover:to-purple-700 text-white shadow-xs border border-indigo-400/30 cursor-pointer"
+            >
+              <span className="text-amber-300">⚡</span>
+              <span className="hidden md:inline">Tutorial WebSocket</span>
+              <span className="md:hidden">WS Tutorial</span>
+            </button>
+
 
             {/* Toggle Conversación Continua Manos Libres */}
             <button
@@ -1292,6 +1357,31 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 </p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Panel Desplegable de Monitoreo Transparente de Tokens y Presupuesto */}
+        {showTokenDetails && (
+          <div className="bg-stone-900 border-b border-stone-800 p-4 animate-in fade-in slide-in-from-top-1 shadow-xl">
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-stone-800">
+              <div className="flex items-center gap-2">
+                <Coins className="w-4 h-4 text-amber-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Consumo Transparente de Recursos en Sesión
+                </h4>
+              </div>
+              <button
+                onClick={() => setShowTokenDetails(false)}
+                className="text-stone-400 hover:text-white p-1 text-xs"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <TokenBudgetMonitor
+              isLiveActive={isLiveActive}
+              compact={false}
+              showTips={true}
+            />
           </div>
         )}
 
@@ -1823,6 +1913,13 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Modal del Tutorial de WebSocket Client-to-Server */}
+      <DirectWebSocketTutorialModal
+        isOpen={showWsTutorial}
+        onClose={() => setShowWsTutorial(false)}
+      />
     </div>
   );
 };
+
