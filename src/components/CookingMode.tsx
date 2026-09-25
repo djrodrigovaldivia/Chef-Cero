@@ -1019,13 +1019,24 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                 </p>
               </div>
 
-              <button
-                onClick={() => setShowGeneratorModal(true)}
-                className="px-4 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-sm font-semibold flex items-center gap-2 shadow-md transition-all shrink-0 cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <span>Tengo estos 3 ingredientes...</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setLevelFilter(5)}
+                  className="px-3.5 py-3 bg-gradient-to-r from-purple-800 to-amber-700 hover:from-purple-900 hover:to-amber-800 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                  title="Acceso directo a recetas únicas de alta cocina para expertos"
+                >
+                  <span>👑</span>
+                  <span>Recetario para Expertos</span>
+                </button>
+
+                <button
+                  onClick={() => setShowGeneratorModal(true)}
+                  className="px-4 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>Crear con 3 ingredientes...</span>
+                </button>
+              </div>
             </div>
 
             {/* Filtro por Nivel Culinario */}
@@ -1100,6 +1111,17 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                   }`}
                 >
                   ✨ Nivel 4 (Avanzado)
+                </button>
+                <button
+                  onClick={() => setLevelFilter(5)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                    levelFilter === 5
+                      ? 'bg-gradient-to-r from-purple-700 to-amber-600 text-white shadow-xs ring-2 ring-purple-400/50'
+                      : 'bg-purple-50 text-purple-900 hover:bg-purple-100 border border-purple-300'
+                  }`}
+                >
+                  <span>👑</span>
+                  <span>Nivel 5 (Maestría / Experto)</span>
                 </button>
               </div>
             </div>

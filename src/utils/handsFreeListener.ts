@@ -8,6 +8,7 @@
  */
 
 import { KitchenResilientVAD } from './kitchenVad';
+import { NoiseResilientVad } from './noiseResilientVad';
 
 export interface HandsFreeVoiceCallbacks {
   onNextStep: () => void;
@@ -28,7 +29,8 @@ export class HandsFreeCookingListener {
   private isListening = false;
   private lastTriggeredTime = 0;
   private readonly COOLDOWN_MS = 750; // Anti-rebote para comandos en streaming
-  private kitchenVad: KitchenResilientVAD | null = null;
+  private workletVad: NoiseResilientVad | null = null;
+  private legacyKitchenVad: KitchenResilientVAD | null = null;
   private isHumanVoiceActive = false;
 
   constructor(callbacks: HandsFreeVoiceCallbacks) {
@@ -39,12 +41,38 @@ export class HandsFreeCookingListener {
 
   private initKitchenVad() {
     try {
-      this.kitchenVad = new KitchenResilientVAD({
+      // Prioridad 1: AudioWorkletProcessor de alto rendimiento con Pasa-Banda (300-3400Hz), Low-cut (<85Hz) y Dynamic Noise Floor
+      this.workletVad = new NoiseResilientVad({
         onVoiceStart: () => {
           this.isHumanVoiceActive = true;
         },
         onVoiceEnd: () => {
-          // Gracia de 300ms tras terminar de hablar
+          setTimeout(() => {
+            this.isHumanVoiceActive = false;
+          }, 300);
+        },
+      });
+
+      this.workletVad.start().then((success) => {
+        if (!success) {
+          this.initLegacyVadFallback();
+        }
+      }).catch(() => {
+        this.initLegacyVadFallback();
+      });
+    } catch (e) {
+      console.warn('Chef Cero: AudioWorklet VAD no disponible, activando fallback:', e);
+      this.initLegacyVadFallback();
+    }
+  }
+
+  private initLegacyVadFallback() {
+    try {
+      this.legacyKitchenVad = new KitchenResilientVAD({
+        onVoiceStart: () => {
+          this.isHumanVoiceActive = true;
+        },
+        onVoiceEnd: () => {
           setTimeout(() => {
             this.isHumanVoiceActive = false;
           }, 300);
@@ -53,11 +81,11 @@ export class HandsFreeCookingListener {
           this.callbacks.onKitchenNoiseDetected?.(reason);
         },
       });
-      this.kitchenVad.start().catch((e) => {
+      this.legacyKitchenVad.start().catch((e) => {
         console.warn('Chef Cero VAD notice: Audio DSP filter skipped (fallback standard microphone):', e?.message);
       });
     } catch (e) {
-      console.warn('Chef Cero VAD init fallback:', e);
+      console.warn('Chef Cero VAD fallback notice:', e);
     }
   }
 
@@ -251,9 +279,13 @@ export class HandsFreeCookingListener {
 
   public stop() {
     this.isExplicitlyStopped = true;
-    if (this.kitchenVad) {
-      this.kitchenVad.stop();
-      this.kitchenVad = null;
+    if (this.workletVad) {
+      this.workletVad.stop();
+      this.workletVad = null;
+    }
+    if (this.legacyKitchenVad) {
+      this.legacyKitchenVad.stop();
+      this.legacyKitchenVad = null;
     }
     if (this.recognition && this.isListening) {
       try {
