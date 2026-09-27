@@ -1209,6 +1209,374 @@ INSTRUCCIONES CLAVE DE EVALUACIÓN:
   }
 });
 
+// Endpoint dedicado: Escaneo de Producto con Generación de 3 Recetas Progresivas por Nivel (Principiante, Intermedio y Experto)
+app.post('/api/product-trio-recipes', async (req, res) => {
+  const defaultFallbackTrio: any = {
+    productDetected: 'Ingrediente Fresco de Cocina',
+    productCategory: 'alimentos frescos',
+    baseCaloriesEst: 'Aprox. 120 - 180 kcal por porción estándar',
+    chefObservation: '¡Excelente ingrediente! Podemos llevarlo desde una receta de 8 minutos para principiantes hasta un plato de autor con técnica gourmet.',
+    recipes: [
+      {
+        id: 'trio-prin-' + Date.now(),
+        level: 'principiante',
+        levelNumber: 1,
+        levelBadge: '🟢 Nivel Principiante (Fácil y Rápido)',
+        title: 'Salteado Tierno Express con Huevo al Calor Residual',
+        description: 'Una receta pensada para quien nunca ha cocinado: 1 sola sartén, fuego bajo/medio y cero riesgo de quemaduras.',
+        totalTimeMinutes: 10,
+        estimatedCalories: 260,
+        difficulty: 'Principiante Total',
+        heroTechnique: 'Cocción suave a fuego bajo y aprovechamiento del calor residual',
+        additionalIngredients: [
+          '1 huevo o rebanada de pan tostado',
+          '1 cucharada de aceite vegetal o de oliva',
+          '1 pizca de sal y pimienta',
+        ],
+        culturalSecret: 'Apagar el fuego un minuto antes permite que la comida termine de cocinarse suavemente sin secarse ni dorarse en exceso.',
+        steps: [
+          {
+            stepNumber: 1,
+            title: 'Mise en place con hornalla apagada',
+            instruction: 'Lava y corta el ingrediente en trocitos pequeños en una tabla limpia. Ten la sal y el aceite listos en la mesa antes de prender el fuego.',
+            tip: 'Nunca cortes nada mientras la sartén ya está caliente en la estufa; eso causa que el aceite se queme.',
+            heatLevel: 'apagado',
+            timerSeconds: 0,
+            timerLabel: '',
+          },
+          {
+            stepNumber: 2,
+            title: 'Calentar la sartén suavemente',
+            instruction: 'Coloca la sartén a Fuego Bajo. Añade 1 cucharada de aceite y espera 45 segundos hasta que notes un brillo ligero sin que salga humo.',
+            tip: 'Si sale humo, retira la sartén de la hornalla unos segundos para enfriar.',
+            heatLevel: 'bajo',
+            timerSeconds: 45,
+            timerLabel: 'Calentar sartén',
+          },
+          {
+            stepNumber: 3,
+            title: 'Cocción y sazón tierna',
+            instruction: 'Añade los trocitos a la sartén. Remueve con cuchara de madera durante 4 a 5 minutos hasta que se sientan tiernos al pinchar.',
+            tip: 'Escucha el sonido: debe ser un chisporroteo suave y calmo, nunca agresivo.',
+            heatLevel: 'medio',
+            timerSeconds: 270,
+            timerLabel: 'Cocción tierna',
+          },
+          {
+            stepNumber: 4,
+            title: 'Reposo y servicio',
+            instruction: 'Agrega una pizca de sal, apaga el fuego por completo y deja reposar 1 minuto en la sartén caliente antes de servir.',
+            tip: 'El calor residual amalgama los jugos y potencia el aroma.',
+            heatLevel: 'apagado',
+            timerSeconds: 60,
+            timerLabel: 'Reposo',
+          },
+        ],
+      },
+      {
+        id: 'trio-med-' + Date.now(),
+        level: 'intermedio',
+        levelNumber: 3,
+        levelBadge: '🟡 Nivel Medio (Sazón y Control Térmico)',
+        title: 'Sofrito Caramelizado con Base Aromática y Glaseado Breve',
+        description: 'Desarrolla sabores profundos aprendiendo a sudar la cebolla y balancear la acidez y el punto dulce natural del ingrediente.',
+        totalTimeMinutes: 20,
+        estimatedCalories: 380,
+        difficulty: 'Intermedio Casero',
+        heroTechnique: 'Caramelización por sudado lento y desglasado de fondo de sartén',
+        additionalIngredients: [
+          'Media cebolla picada fina',
+          '1 diente de ajo machacado',
+          '2 cucharadas de aceite de oliva o mantequilla',
+          '50 ml de caldo o agua tibia',
+          'Pizca de orégano o hierbas secas',
+          'Sal fina y pimienta',
+        ],
+        culturalSecret: 'Añadir la sal al inicio sobre la verdura extrae sus propios jugos naturales, logrando que se caramelice sin quemarse.',
+        steps: [
+          {
+            stepNumber: 1,
+            title: 'Mise en place completa',
+            instruction: 'Pica el ingrediente principal en dados regulares de 1 cm, y la cebolla en brunoise fina. Mide los líquidos en un pocillo.',
+            tip: 'El corte uniforme garantiza que todos los trozos alcancen el punto al mismo tiempo.',
+            heatLevel: 'apagado',
+            timerSeconds: 0,
+            timerLabel: '',
+          },
+          {
+            stepNumber: 2,
+            title: 'Sudado aromático a fuego bajo',
+            instruction: 'Calienta el aceite en la sartén a Fuego Bajo. Agrega la cebolla con una pizca de sal y cocínala 6 minutos hasta que esté translúcida y dulce.',
+            tip: 'No dejes que se dore; buscamos el dulzor sedoso de la cebolla pochada.',
+            heatLevel: 'bajo',
+            timerSeconds: 360,
+            timerLabel: 'Sudar sofrito',
+          },
+          {
+            stepNumber: 3,
+            title: 'Integración y doradura suave',
+            instruction: 'Sube a Fuego Medio. Incorpora el ingrediente protagonista y el ajo picado. Saltea durante 6 minutos removiendo constantemente.',
+            tip: 'El ajo se agrega tarde para que no se queme ni amargue la preparación.',
+            heatLevel: 'medio',
+            timerSeconds: 360,
+            timerLabel: 'Salteado integrado',
+          },
+          {
+            stepNumber: 4,
+            title: 'Desglasado y salsa jugosa',
+            instruction: 'Vierte los 50 ml de líquido raspando con espátula los sabores pegados al fondo. Cocina 2 minutos hasta reducir a textura de salsa brillante.',
+            tip: 'El fondo caramelizado le da color ámbar y sabor profundo a la salsa.',
+            heatLevel: 'medio',
+            timerSeconds: 120,
+            timerLabel: 'Reducir salsa',
+          },
+        ],
+      },
+      {
+        id: 'trio-exp-' + Date.now(),
+        level: 'experto',
+        levelNumber: 5,
+        levelBadge: '🔴 Nivel Experto (Técnica Gourmet y Autor)',
+        title: 'Creación de Autor: Textura Crujiente con Emulsión Templada Fuera de Fuego',
+        description: 'Aplica técnicas de alta gastronomía: sellado térmico de precisión, contraste crujiente vs sedoso y ligazón con grasa fría.',
+        totalTimeMinutes: 30,
+        estimatedCalories: 490,
+        difficulty: 'Chef Maestro / Experto',
+        heroTechnique: 'Sellado de Maillard y emulsión al plato fuera del fuego (Mantecatura)',
+        additionalIngredients: [
+          '30g de mantequilla sin sal cortada en cubitos fríos de nevera',
+          '1 chalota o ajo morado finamente picado',
+          '40 ml de vino blanco o reducción de vinagre de manzana',
+          'Flor de sal y pimienta de molinillo',
+          'Hierba fresca para coronar (tomillo, ciboulette o cilantro)',
+        ],
+        culturalSecret: 'La emulsión debe ligarse estrictamente con el fuego apagado: la grasa fría emulsiona con el vapor tibio sin fundirse en aceite puro.',
+        steps: [
+          {
+            stepNumber: 1,
+            title: 'Atemperado y secado milimétrico',
+            instruction: 'Seca cuidadosamente el ingrediente protagonista con papel toalla para eliminar toda humedad superficial. Mantén la mantequilla en frío extremo.',
+            tip: 'La humedad externa enfría el metal de la sartén e impide la reacción dorada de Maillard.',
+            heatLevel: 'apagado',
+            timerSeconds: 0,
+            timerLabel: '',
+          },
+          {
+            stepNumber: 2,
+            title: 'Sellado a alta temperatura (Maillard)',
+            instruction: 'Calienta la sartén de fondo grueso a Fuego Alto con un velo de aceite. Sella las piezas durante 2 a 3 minutos sin moverlas hasta lograr costra dorada.',
+            tip: 'No toques el ingrediente: se despegará por sí solo en cuanto la costra caramelizada esté lista.',
+            heatLevel: 'alto',
+            timerSeconds: 180,
+            timerLabel: 'Sellado vivo',
+          },
+          {
+            stepNumber: 3,
+            title: 'Desglasado y concentración umami',
+            instruction: 'Baja a Fuego Medio. Retira la pieza a un plato tibio. Añade la chalota 30 segundos, vierte el vino o reducción y raspa el fondo reduciendo a la mitad.',
+            tip: 'La reducción de vino concentra azúcares y acidez noble que balanceará el plato.',
+            heatLevel: 'medio',
+            timerSeconds: 120,
+            timerLabel: 'Desglasar y reducir',
+          },
+          {
+            stepNumber: 4,
+            title: 'Emulsión satén fuera del fuego (Fuego Apagado)',
+            instruction: '¡APAGA EL FUEGO TOTALMENTE! Retira la sartén a una hornalla fría. Espera 20 segundos y bate los dados de mantequilla helada en círculos con varillas hasta lograr una salsa untuosa con brillo espejo.',
+            tip: 'Si la sartén hierve, la salsa se cortará; la agitación rápida a 65°C crea la emulsión perfecta.',
+            heatLevel: 'apagado',
+            timerSeconds: 90,
+            timerLabel: 'Montar emulsión',
+          },
+          {
+            stepNumber: 5,
+            title: 'Emplatado de restaurante',
+            instruction: 'Coloca la preparación dorada, salsea con el cordón de emulsión brillante y finaliza con flor de sal y brotes frescos templados.',
+            tip: 'Sirve de inmediato en plato tibio para preservar los contrastes de temperatura.',
+            heatLevel: 'apagado',
+            timerSeconds: 0,
+            timerLabel: '',
+          },
+        ],
+      },
+    ],
+    audioScript: 'He analizado la fotografía de tu ingrediente. Te he preparado 3 recetas exclusivas: una opción principiante sin complicaciones, un plato casero para dominar el sofrito, y una propuesta gourmet con emulsión de autor.',
+  };
+
+  try {
+    const { imageBase64, mimeType = 'image/jpeg', userProfile } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Falta la imagen del producto en base64' });
+    }
+
+    const ai = getAi();
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    let cleanBase64 = imageBase64;
+    let actualMime = mimeType;
+    if (imageBase64.includes(';base64,')) {
+      const parts = imageBase64.split(';base64,');
+      actualMime = parts[0].replace('data:', '');
+      cleanBase64 = parts[1];
+    }
+
+    if (!apiKey) {
+      return res.json(defaultFallbackTrio);
+    }
+
+    const promptText = `Eres el Chef Mentor de "Chef Cero". El usuario ha tomado o subido una foto de UN producto o ingrediente comestible de su cocina.
+Tu misión es:
+1. Identificar con precisión el producto o alimento protagonista de la foto.
+2. Indicar su categoría y calorimetría estimada base (ej: "Aprox. 22 kcal por cada 100g").
+3. Diseñar exactamente TRES (3) RECETAS que se puedan preparar teniendo a este ingrediente como protagonista absoluto, divididas estrictamente por nivel culinario:
+
+RECETA 1 - NIVEL PRINCIPIANTE (CERO ABSOLUTO / APRENDIZ):
+- Pensada para alguien que NUNCA ha cocinado y le tiene miedo al fuego o a quemarse.
+- Máximo 8 a 12 minutos.
+- 1 sola hornalla/sartén, fuego bajo/medio.
+- Máximo 3 o 4 pasos muy sencillos. El Paso 1 DEBE ser con heatLevel: 'apagado' para Mise en Place y preparación.
+- Ingredientes adicionales mínimos y universales (pan, huevo, sal, aceite común, agua).
+
+RECETA 2 - NIVEL INTERMEDIO (COCINERO CASERO SEGURO):
+- Introduce técnicas intermedias: sudar sofrito con cebolla/ajo despacio para caramelizar, sellado jugoso o desglasado simple.
+- 15 a 22 minutos.
+- Control de llama (bajo para sudar, medio para integrar).
+- 4 pasos guiados. El Paso 1 DEBE ser con heatLevel: 'apagado'.
+
+RECETA 3 - NIVEL EXPERTO (CHEF GOURMET / ALTA COCINA):
+- Introduce técnicas de restaurante: sellado Maillard vivo, reducción aromática, emulsión fuera del fuego con grasa fría (mantecatura) o contraste sensorial crujiente/untuoso.
+- 25 a 35 minutos.
+- 4 a 5 pasos precisos. El Paso 1 DEBE ser con heatLevel: 'apagado'.
+
+REGLAS PARA CADA RECETA:
+- title: atractivo y descriptivo en español latinoamericano.
+- description: breve resumen apetitoso.
+- totalTimeMinutes: número entero realista.
+- estimatedCalories: calorías aproximadas por porción (número entero, ej: 250, 390, 520).
+- difficulty: 'Principiante Total', 'Intermedio Casero', o 'Chef Maestro / Experto'.
+- heroTechnique: la técnica clave que se practica (ej: 'Pochado suave en calor residual', 'Sofrito dulce caramelizado', 'Emulsión templada fuera de fuego').
+- additionalIngredients: lista clara de ingredientes básicos adicionales de alacena necesarios.
+- culturalSecret: secreto del chef en 1 o 2 oraciones.
+- steps: array de pasos con stepNumber, title, instruction clara, tip, heatLevel ('apagado' | 'bajo' | 'medio' | 'alto'), timerSeconds (segundos para temporizador interactivo o 0 si no requiere), timerLabel.
+
+audioScript: un guión corto (máximo 3 oraciones) con tono cálido y motivador de Chef Cero listo para ser leído en voz alta presentando las 3 alternativas.`;
+
+    const response = await callGeminiWithFallback(ai, {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: promptText },
+            {
+              inlineData: {
+                mimeType: actualMime,
+                data: cleanBase64,
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            productDetected: { type: Type.STRING, description: 'Nombre claro del producto reconocido en la foto' },
+            productCategory: { type: Type.STRING, description: 'Categoría: verdura, fruta, carne, lácteo, grano, etc.' },
+            baseCaloriesEst: { type: Type.STRING, description: 'Calorimetría base estimada (ej: 22 kcal por cada 100g)' },
+            chefObservation: { type: Type.STRING, description: 'Observación y motivación del Chef Cero' },
+            audioScript: { type: Type.STRING, description: 'Resumen en audio hablado en español latino' },
+            recipes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  level: { type: Type.STRING, enum: ['principiante', 'intermedio', 'experto'] },
+                  levelNumber: { type: Type.INTEGER },
+                  levelBadge: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  totalTimeMinutes: { type: Type.INTEGER },
+                  estimatedCalories: { type: Type.INTEGER },
+                  difficulty: { type: Type.STRING },
+                  heroTechnique: { type: Type.STRING },
+                  culturalSecret: { type: Type.STRING },
+                  additionalIngredients: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
+                  steps: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        stepNumber: { type: Type.INTEGER },
+                        title: { type: Type.STRING },
+                        instruction: { type: Type.STRING },
+                        tip: { type: Type.STRING },
+                        heatLevel: { type: Type.STRING },
+                        timerSeconds: { type: Type.INTEGER },
+                        timerLabel: { type: Type.STRING },
+                      },
+                      required: ['stepNumber', 'title', 'instruction', 'tip', 'heatLevel', 'timerSeconds'],
+                    },
+                  },
+                },
+                required: [
+                  'level',
+                  'levelNumber',
+                  'levelBadge',
+                  'title',
+                  'description',
+                  'totalTimeMinutes',
+                  'estimatedCalories',
+                  'difficulty',
+                  'heroTechnique',
+                  'additionalIngredients',
+                  'steps',
+                ],
+              },
+            },
+          },
+          required: ['productDetected', 'baseCaloriesEst', 'chefObservation', 'recipes'],
+        },
+      },
+    });
+
+    const parsed: any = safeParseGeminiJson(response.text, defaultFallbackTrio);
+    if (!parsed || !parsed.recipes || parsed.recipes.length === 0) {
+      return res.json(defaultFallbackTrio);
+    }
+
+    // Asegurar IDs únicos
+    parsed.recipes = parsed.recipes.map((r: any, idx: number) => ({
+      ...r,
+      id: r.id || `trio-${r.level || idx}-${Date.now()}-${idx}`,
+    }));
+
+    // Generar audio nativo de voz con Gemini TTS en español latino (timeout 3.5s)
+    try {
+      if (parsed.audioScript) {
+        const audioPromise = generateSpanishSpeechAudio(ai, parsed.audioScript);
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
+        const audioResult = await Promise.race([audioPromise, timeoutPromise]);
+        if (audioResult) {
+          parsed.audioBase64 = audioResult.audioBase64;
+          parsed.audioMimeType = audioResult.mimeType;
+        }
+      }
+    } catch (ttsErr) {
+      console.warn('Chef Cero: Aviso generando audio de trío de recetas:', ttsErr);
+    }
+
+    return res.json(parsed);
+  } catch (error: any) {
+    console.warn('Chef Cero: Error en generación de trío de recetas por nivel:', error?.message);
+    return res.json(defaultFallbackTrio);
+  }
+});
+
 // 2. Recipe Planner & "Tengo 3 ingredientes" Generator
 app.post('/api/recipe/generate', async (req, res) => {
   try {
@@ -2162,7 +2530,7 @@ Crea la receta completa en español latinoamericano cumpliendo las directrices d
       },
     });
 
-    const parsed = safeParseGeminiJson(response.text, null);
+    const parsed: any = safeParseGeminiJson(response.text, null);
     if (!parsed || !parsed.title || !parsed.steps) {
       throw new Error('Gemini signature recipe response incomplete');
     }

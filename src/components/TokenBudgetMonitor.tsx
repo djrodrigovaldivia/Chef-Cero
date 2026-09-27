@@ -16,9 +16,15 @@ import { tokenBudgetTracker, TokenUsageStats, TOKENS_PER_SECOND_AUDIO } from '..
 
 interface TokenBudgetMonitorProps {
   isLiveActive?: boolean;
+  compact?: boolean;
+  showTips?: boolean;
 }
 
-export const TokenBudgetMonitor: React.FC<TokenBudgetMonitorProps> = ({ isLiveActive = false }) => {
+export const TokenBudgetMonitor: React.FC<TokenBudgetMonitorProps> = ({
+  isLiveActive = false,
+  compact = false,
+  showTips = true,
+}) => {
   const [stats, setStats] = useState<TokenUsageStats>(tokenBudgetTracker.getStats());
   const [showConfig, setShowConfig] = useState(false);
   const [customBudgetInput, setCustomBudgetInput] = useState<string>(stats.tokenBudget.toString());

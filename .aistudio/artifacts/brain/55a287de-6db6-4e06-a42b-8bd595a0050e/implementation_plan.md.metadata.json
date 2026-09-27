@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan de implementación para la sección 'Recetas de Autor' en Modo Completo con IA de alta cocina para generar propuestas gastronómicas únicas y de nivel experto, permitiendo al usuario experimentar por parámetros o texto libre, guardar creaciones en su recetario personal, y cocinarlas en el flujo interactivo de 3 etapas.",
-  "updatedAt":  "2026-09-25T20:53:21.600753288Z",
+  "summary":  "Plan de implementación para la funcionalidad de foto de producto con generación de 3 recetas progresivas (Principiante, Intermedio y Experto) con pasos guiados interactivos para cocinar en vivo, ingredientes necesarios y cálculo calórico aproximado.",
+  "updatedAt":  "2026-09-26T20:24:26.210471990Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

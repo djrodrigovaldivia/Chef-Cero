@@ -14,6 +14,7 @@ interface ReactiveLiveOrbProps {
   onBargeIn?: () => void;
   latestChefText?: string;
   latestUserText?: string;
+  onSendLivePrompt?: (text: string) => void;
 }
 
 export const ReactiveLiveOrb: React.FC<ReactiveLiveOrbProps> = ({
@@ -28,6 +29,7 @@ export const ReactiveLiveOrb: React.FC<ReactiveLiveOrbProps> = ({
   onBargeIn,
   latestChefText,
   latestUserText,
+  onSendLivePrompt,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -317,9 +319,40 @@ export const ReactiveLiveOrb: React.FC<ReactiveLiveOrbProps> = ({
               Buffer Circular: Cero latencia GC
             </span>
             <span className="italic">
-              {isChefSpeaking ? 'Toca el orbe para hablar' : 'Habla con naturalidad'}
+              {isChefSpeaking ? 'Toca el orbe para interrumpir' : 'Habla con naturalidad'}
             </span>
           </div>
+
+          {/* Botones de Consulta Inmediata en Vivo (Envío garantizado con 1 toque) */}
+          {onSendLivePrompt && (
+            <div className="mt-2.5 pt-2 border-t border-stone-800/60 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] uppercase font-bold text-amber-400">Enviar ya:</span>
+              <button
+                onClick={() => onSendLivePrompt('Chef, ¿cómo ajusto el fuego para que no se queme?')}
+                className="text-[11px] bg-stone-800 hover:bg-stone-700 text-stone-200 px-2.5 py-1 rounded-lg border border-stone-700 flex items-center gap-1 transition cursor-pointer"
+              >
+                🔥 ¿Fuego correcto?
+              </button>
+              <button
+                onClick={() => onSendLivePrompt('Chef, ¿qué paso sigue en la receta?')}
+                className="text-[11px] bg-stone-800 hover:bg-stone-700 text-stone-200 px-2.5 py-1 rounded-lg border border-stone-700 flex items-center gap-1 transition cursor-pointer"
+              >
+                👉 ¿Qué sigue?
+              </button>
+              <button
+                onClick={() => onSendLivePrompt('Chef, pon un temporizador de 5 minutos')}
+                className="text-[11px] bg-stone-800 hover:bg-stone-700 text-stone-200 px-2.5 py-1 rounded-lg border border-stone-700 flex items-center gap-1 transition cursor-pointer"
+              >
+                ⏱️ Temporizador 5m
+              </button>
+              <button
+                onClick={() => onSendLivePrompt('¡Chef, auxilio, se me está quemando la sartén!')}
+                className="text-[11px] bg-rose-950/80 hover:bg-rose-900 text-rose-200 px-2.5 py-1 rounded-lg border border-rose-800/60 flex items-center gap-1 transition cursor-pointer"
+              >
+                🚨 ¡Se quema!
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

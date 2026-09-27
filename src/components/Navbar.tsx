@@ -13,7 +13,7 @@ interface NavbarProps {
   onSelectTab: (tab: ActiveTab) => void;
   onOpenVoiceAssistant: () => void;
   onOpenShoppingList?: () => void;
-  onOpenFridgeScanner?: () => void;
+  onOpenFridgeScanner?: (mode?: 'level_trio' | 'inspect_product' | 'fridge') => void;
   onOpenTechniques?: () => void;
   userProfile: UserProfile;
 }
@@ -166,21 +166,39 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
 
                   {onOpenFridgeScanner && (
-                    <button
-                      onClick={() => {
-                        onOpenFridgeScanner();
-                        setIsToolsMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-50 text-stone-700 hover:text-amber-950 flex items-center justify-between transition cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <Camera className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Escanear Nevera con Cámara</span>
-                      </span>
-                      <span className="text-[9px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full">
-                        IA
-                      </span>
-                    </button>
+                    <>
+                      <button
+                        onClick={() => {
+                          onOpenFridgeScanner('level_trio');
+                          setIsToolsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-50 text-stone-700 hover:text-amber-950 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                          <span>3 Recetas por Foto (Niveles)</span>
+                        </span>
+                        <span className="text-[9px] bg-amber-500 text-stone-950 font-black px-1.5 py-0.2 rounded-full shadow-2xs">
+                          3 Niveles
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          onOpenFridgeScanner('fridge');
+                          setIsToolsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-50 text-stone-700 hover:text-amber-950 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          <Camera className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Escanear Nevera con Cámara</span>
+                        </span>
+                        <span className="text-[9px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full">
+                          IA
+                        </span>
+                      </button>
+                    </>
                   )}
 
                   {onOpenTechniques && (

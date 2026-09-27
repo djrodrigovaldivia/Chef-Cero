@@ -214,7 +214,8 @@ export type WorldCuisineId =
   | 'asiatica'
   | 'italiana'
   | 'espanola'
-  | 'francesa';
+  | 'francesa'
+  | 'autor';
 
 export interface WorldCuisine {
   id: WorldCuisineId;

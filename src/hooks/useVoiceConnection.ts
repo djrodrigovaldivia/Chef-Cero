@@ -234,8 +234,21 @@ export function useVoiceConnection(options: UseVoiceConnectionOptions = {}) {
     });
 
     if (ctx.state === 'suspended') {
-      await ctx.resume();
+      try {
+        await ctx.resume();
+      } catch (e) {
+        console.warn('Chef Cero: Error reanudando AudioContext en iOS:', e);
+      }
     }
+
+    // Desbloqueo silencioso para iOS Safari: reproducir 1 micro-buffer de 1 muestra muda
+    try {
+      const dummyBuffer = ctx.createBuffer(1, 1, 24000);
+      const dummySource = ctx.createBufferSource();
+      dummySource.buffer = dummyBuffer;
+      dummySource.connect(ctx.destination);
+      dummySource.start(0);
+    } catch (_) {}
 
     // Analizador de salida para el Orbe Reactivo cuando habla el Chef
     const analyser = ctx.createAnalyser();
@@ -384,6 +397,10 @@ export function useVoiceConnection(options: UseVoiceConnectionOptions = {}) {
 
               case 'audio':
                 if (msg.data) {
+                  // Reanudar contexto si iOS Safari lo suspendió al perder el foco
+                  if (outputAudioCtxRef.current && outputAudioCtxRef.current.state === 'suspended') {
+                    outputAudioCtxRef.current.resume().catch(() => {});
+                  }
                   // Decodificar Base64 a Int16 y escribir en el Ring Buffer
                   const binaryStr = atob(msg.data);
                   const len = binaryStr.length;

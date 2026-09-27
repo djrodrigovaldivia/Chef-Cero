@@ -19,14 +19,18 @@ const silentModeListeners: Set<SilentModeListener> = new Set();
 let currentSubtitle: SubtitleItem | null = null;
 let subtitleDismissTimeout: any = null;
 
-// Inicializar preferencia de Modo Silencioso desde localStorage
+// Inicializar preferencia de Modo Silencioso desde localStorage (Por defecto: Silencioso = true)
 let isSilentModeActive: boolean = (() => {
   try {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('chef_cero_silent_mode') === 'true';
+      const stored = localStorage.getItem('chef_cero_silent_mode');
+      if (stored !== null) {
+        return stored === 'true';
+      }
     }
   } catch (_) {}
-  return false;
+  // Por defecto el Chef empieza en silencio sin hablar en voz alta; el usuario activa la voz si lo desea
+  return true;
 })();
 
 export function getSilentMode(): boolean {

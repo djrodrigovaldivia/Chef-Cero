@@ -38,6 +38,7 @@ const CURATED_SIGNATURE_SEEDS: SignatureDish[] = [
     id: 'sig-preset-1',
     isSignatureDish: true,
     title: 'Milhojas de Portobello Glaseado en Balsámico con Crema de Ajo Asado y Nueces',
+    description: 'Elevación de autor: Portobello laqueado en reducción balsámica sobre crema aterciopelada de ajo asado y lluvia de nueces crocantes.',
     chefConcept: 'Contraste umami vegetal profundo con crocante de fruto seco tostado',
     storyNarrative: 'Nace de elevar un ingrediente terrenal a la sofisticación de una mesa de tres estrellas: la carne densa del portobello caramelizada lentamente absorbe el vinagre añejo, mientras el ajo asado aporta una untuosidad dulce que no necesita crema.',
     heroTechnique: 'Reducción balsámica y montaje de salsa con emulsión fuera del fuego',

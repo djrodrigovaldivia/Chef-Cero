@@ -418,22 +418,30 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
       tokenBudgetTracker.startLiveSession();
 
-      // 2. Acceso a micrófono con restricciones de hardware para móviles (AEC nativa)
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-        } as any,
-      });
+      // 2. Acceso a micrófono con restricciones de hardware para móviles (AEC nativa y fallback tolerante)
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+          },
+        });
+      } catch (errGUM) {
+        // Fallback genérico para Safari iOS si los constraints avanzados fallan
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
       mediaStreamRef.current = stream;
 
       // 3. Crear AudioContext con latencyHint interactiva de hardware
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const inputCtx = new AudioCtx({ latencyHint: 'interactive' });
       if (inputCtx.state === 'suspended') {
-        await inputCtx.resume();
+        try {
+          await inputCtx.resume();
+        } catch (_) {}
       }
       audioContextRef.current = inputCtx;
 
@@ -463,9 +471,10 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       let gateEnvelope = 0;
       let holdCounter = 0;
       const attackStep = 1 / (sampleRate * 0.008); // 8ms ataque para no comer consonantes iniciales
-      const releaseStep = 1 / (sampleRate * 0.160); // 160ms relajación suave para caída de voz natural
-      const holdSamples = Math.round(sampleRate * 0.060); // 60ms retención
-      const thresholdRms = 0.022; // Umbral calibrado de ruido de cocina (-42 dBFS aprox)
+      const releaseStep = 1 / (sampleRate * 0.220); // 220ms relajación suave para caída de voz natural en móviles
+      const holdSamples = Math.round(sampleRate * 0.100); // 100ms retención para no cortar finales de frases
+      // Umbral más sensible y permisivo para micrófonos de iPhone (0.012 en lugar de 0.022)
+      const thresholdRms = 0.012;
 
       const dspProcessor = inputCtx.createScriptProcessor(512, 1, 1);
       dspProcessorRef.current = dspProcessor;
@@ -1260,9 +1269,12 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                 stopSpeaking();
                 onClose();
               }}
-              className="p-2 rounded-lg hover:bg-white/20 text-white transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-red-600/90 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm active:scale-95"
+              aria-label="Salir del asistente"
+              title="Salir del modo Chef Cero en vivo"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4 stroke-[2.5]" />
+              <span className="inline font-bold">Salir</span>
             </button>
           </div>
         </div>
@@ -1459,6 +1471,9 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             onBargeIn={() => voiceConn.flushPlayback()}
             latestChefText={latestChefLiveText}
             latestUserText={latestUserLiveText}
+            onSendLivePrompt={(promptText) => {
+              handleSendQuery(promptText);
+            }}
           />
         )}
 
@@ -1910,6 +1925,25 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             className="p-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-full transition-colors"
           >
             <Send className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Barra accesible de cierre inferior para iPhone / Dispositivos Móviles */}
+        <div className="bg-stone-100 px-4 py-2 border-t border-stone-200 flex items-center justify-between sm:hidden safe-bottom">
+          <div className="flex items-center gap-2 text-stone-500 text-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+            <span className="text-[11px]">{isLiveActive ? 'En vivo con Gemini 3.8' : 'Asistente Chef Cero'}</span>
+          </div>
+          <button
+            onClick={() => {
+              stopLiveSession();
+              stopSpeaking();
+              onClose();
+            }}
+            className="px-3.5 py-1.5 bg-stone-800 hover:bg-stone-900 active:scale-95 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs"
+          >
+            <X className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>Salir / Cerrar</span>
           </button>
         </div>
       </div>

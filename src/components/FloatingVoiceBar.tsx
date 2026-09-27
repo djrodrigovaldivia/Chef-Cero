@@ -73,7 +73,7 @@ export const FloatingVoiceBar: React.FC<FloatingVoiceBarProps> = ({
       let currentAvg = 0;
 
       if (analyser && isMicActive) {
-        analyser.getByteFrequencyData(dataArray);
+        analyser.getByteFrequencyData(dataArray as any);
 
         // Tomar muestras en el rango de frecuencias de voz humana (bins 2 a 18)
         let sum = 0;

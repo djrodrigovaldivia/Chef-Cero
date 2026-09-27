@@ -38,6 +38,9 @@ import { setupWakeLockAutoRefresh, isWakeLockSupported } from '../utils/wakeLock
 import { CookingEmergencyModal } from './CookingEmergencyModal';
 import { FloatingTimerIsland } from './FloatingTimerIsland';
 import { StepVisualTextureCard } from './StepVisualTextureCard';
+import { InteractiveInstructionText } from './InteractiveInstructionText';
+import { IngredientSubstituteDrawer } from './IngredientSubstituteDrawer';
+import { ImmersiveCookModeModal } from './ImmersiveCookModeModal';
 
 interface CookingModeProps {
   userProfile: UserProfile;
@@ -130,6 +133,8 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   // Referencias secundarias desplegables durante la cocción activa
   const [showHeatGuideInCooking, setShowHeatGuideInCooking] = useState(false);
   const [showIngredientsInCooking, setShowIngredientsInCooking] = useState(false);
+  const [substituteTargetIngredient, setSubstituteTargetIngredient] = useState<string | null>(null);
+  const [isImmersiveCookModeOpen, setIsImmersiveCookModeOpen] = useState(false);
 
   // Escalador de porciones inteligente (1, 2, 4 porciones)
   const [targetServings, setTargetServings] = useState<number>(selectedRecipe.servings || 2);
@@ -1560,20 +1565,34 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                   <div
                     key={idx}
                     onClick={() => toggleMiseItem(idx)}
-                    className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                    className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                       isChecked
                         ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
                         : 'bg-stone-50 border-stone-200 text-stone-800 hover:bg-stone-100'
                     }`}
                   >
-                    {isChecked ? (
-                      <CheckSquare className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                    ) : (
-                      <Square className="w-5 h-5 text-stone-400 shrink-0 mt-0.5" />
-                    )}
-                    <span className={`text-xs sm:text-sm font-medium leading-relaxed ${isChecked ? 'line-through text-stone-500' : ''}`}>
-                      {scaledItem}
-                    </span>
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      {isChecked ? (
+                        <CheckSquare className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      ) : (
+                        <Square className="w-5 h-5 text-stone-400 shrink-0 mt-0.5" />
+                      )}
+                      <span className={`text-xs sm:text-sm font-medium leading-relaxed ${isChecked ? 'line-through text-stone-500' : ''}`}>
+                        {scaledItem}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSubstituteTargetIngredient(item);
+                      }}
+                      className="px-2 py-1 rounded-lg bg-stone-200/90 hover:bg-amber-100 hover:text-amber-950 text-stone-700 text-[10px] font-bold flex items-center gap-1 transition shrink-0 self-center"
+                      title="Ver qué usar si no tienes este ingrediente"
+                    >
+                      <span>⇄ Sustituir</span>
+                    </button>
                   </div>
                 );
               })}
@@ -1936,20 +1955,33 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               <div
                 key={idx}
                 onClick={() => toggleMiseItem(idx)}
-                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                   isChecked
                     ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
                     : 'bg-stone-50 border-stone-200 text-stone-800 hover:bg-stone-100'
                 }`}
               >
-                {isChecked ? (
-                  <CheckSquare className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                ) : (
-                  <Square className="w-5 h-5 text-stone-400 shrink-0 mt-0.5" />
-                )}
-                <span className={`text-xs font-medium leading-relaxed ${isChecked ? 'line-through text-stone-500' : ''}`}>
-                  {item}
-                </span>
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  {isChecked ? (
+                    <CheckSquare className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <Square className="w-5 h-5 text-stone-400 shrink-0 mt-0.5" />
+                  )}
+                  <span className={`text-xs font-medium leading-relaxed ${isChecked ? 'line-through text-stone-500' : ''}`}>
+                    {item}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSubstituteTargetIngredient(item);
+                  }}
+                  className="px-2 py-0.5 rounded-md bg-stone-200 hover:bg-amber-100 hover:text-amber-950 text-stone-700 text-[10px] font-bold flex items-center gap-1 transition shrink-0"
+                  title="Ver qué usar si te falta este ingrediente"
+                >
+                  <span>⇄ Sustituir</span>
+                </button>
               </div>
             );
           })}
@@ -2291,13 +2323,15 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               )}
             </button>
 
-            {/* Modo Pantalla Completa Inmersivo */}
+            {/* Modo Pantalla Completa Inmersivo estilo NYT Cooking */}
             <button
-              onClick={() => setIsFullScreenCooking(!isFullScreenCooking)}
-              className="p-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-200 text-xs transition cursor-pointer"
-              title={isFullScreenCooking ? 'Salir de pantalla completa' : 'Modo cocina inmersivo pantalla completa'}
+              onClick={() => setIsImmersiveCookModeOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer ring-2 ring-amber-300/80"
+              title="Abrir Modo Cocina Inmersivo: texto gigante, controles táctiles grandes y sin distracciones"
             >
-              {isFullScreenCooking ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Modo Cocina</span>
+              <span className="sm:hidden">Cocina</span>
             </button>
 
             {/* Botón de Pánico / S.O.S. Cocina */}
@@ -2444,9 +2478,13 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               </button>
             </div>
 
-            <p className="text-base sm:text-lg font-bold text-stone-900 leading-snug">
-              {currentStep.instruction}
-            </p>
+            <InteractiveInstructionText
+              text={currentStep.instruction}
+              stepNumber={currentStep.stepNumber}
+              activeTimers={activeTimers}
+              className="text-base sm:text-lg font-bold text-stone-900 leading-snug"
+              onStartTimer={(seconds, label) => handleStartTimer(seconds, label, currentStep.stepNumber)}
+            />
           </div>
 
           {/* Marcador Dinámico de Textura, Color y Referencia Visual del Paso */}
@@ -3275,6 +3313,47 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           </div>
         )}
       </div>
+
+      {/* Cajón Rápido de Sustitutos de Ingredientes (Estilo Tasty 1-Tap) */}
+      {substituteTargetIngredient && (
+        <IngredientSubstituteDrawer
+          ingredientText={substituteTargetIngredient}
+          userLevel={userProfile.level}
+          recipeTitle={selectedRecipe.title}
+          onClose={() => setSubstituteTargetIngredient(null)}
+          onSelectSubstitute={(sub) => {
+            speakSpanishText(`Entendido. Puedes usar ${sub} como reemplazo.`);
+          }}
+        />
+      )}
+
+      {/* Modo Cocina Inmersivo a Pantalla Completa (Estilo NYT Cooking Cook Mode) */}
+      {isImmersiveCookModeOpen && (
+        <ImmersiveCookModeModal
+          recipe={selectedRecipe}
+          currentStepIndex={currentStepIndex}
+          totalSteps={selectedRecipe.steps.length}
+          currentStep={currentStep}
+          activeTimers={activeTimers}
+          isHandsFreeActive={isHandsFreeActive}
+          isSilent={isSilent}
+          onNextStep={() => {
+            if (currentStepIndex < selectedRecipe.steps.length - 1) {
+              setCurrentStepIndex((prev) => prev + 1);
+            }
+          }}
+          onPrevStep={() => {
+            if (currentStepIndex > 0) {
+              setCurrentStepIndex((prev) => prev - 1);
+            }
+          }}
+          onClose={() => setIsImmersiveCookModeOpen(false)}
+          onStartTimer={handleStartTimer}
+          onToggleHandsFree={() => setIsHandsFreeActive(!isHandsFreeActive)}
+          onToggleSilent={toggleSilentMode}
+          onOpenEmergency={() => setIsEmergencyModalOpen(true)}
+        />
+      )}
     </div>
   );
 };

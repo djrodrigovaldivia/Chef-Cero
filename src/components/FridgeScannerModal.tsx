@@ -22,12 +22,52 @@ import {
   CheckCircle2,
   Calendar,
   ThumbsUp,
-  Info
+  Info,
+  Layers,
+  Zap,
+  Award,
 } from 'lucide-react';
 import { Recipe } from '../types';
 import { speakSpanishText, stopSpeaking } from '../utils/audioAlert';
 
-export type ScannerMode = 'inspect_product' | 'fridge';
+export type ScannerMode = 'level_trio' | 'inspect_product' | 'fridge';
+
+export interface TrioRecipeStep {
+  stepNumber: number;
+  title: string;
+  instruction: string;
+  tip: string;
+  heatLevel: 'apagado' | 'bajo' | 'medio' | 'alto';
+  timerSeconds: number;
+  timerLabel?: string;
+}
+
+export interface TrioRecipe {
+  id: string;
+  level: 'principiante' | 'intermedio' | 'experto';
+  levelNumber: number;
+  levelBadge: string;
+  title: string;
+  description: string;
+  totalTimeMinutes: number;
+  estimatedCalories: number;
+  difficulty: string;
+  heroTechnique: string;
+  additionalIngredients: string[];
+  steps: TrioRecipeStep[];
+  culturalSecret?: string;
+}
+
+export interface ProductTrioResult {
+  productDetected: string;
+  productCategory: string;
+  baseCaloriesEst: string;
+  chefObservation: string;
+  recipes: TrioRecipe[];
+  audioScript?: string;
+  audioBase64?: string;
+  audioMimeType?: string;
+}
 
 interface FridgeScannerModalProps {
   isOpen: boolean;
@@ -92,13 +132,15 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
   isOpen,
   onClose,
   onStartCookingRecipe,
-  initialMode = 'inspect_product',
+  initialMode = 'level_trio',
 }) => {
   const [mode, setMode] = useState<ScannerMode>(initialMode);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [inspectionResult, setInspectionResult] = useState<ProductInspectionResult | null>(null);
+  const [trioResult, setTrioResult] = useState<ProductTrioResult | null>(null);
+  const [selectedLevelTab, setSelectedLevelTab] = useState<'principiante' | 'intermedio' | 'experto'>('principiante');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSpeakingResult, setIsSpeakingResult] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -109,6 +151,8 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
       setSelectedImage(null);
       setScanResult(null);
       setInspectionResult(null);
+      setTrioResult(null);
+      setSelectedLevelTab('principiante');
       setErrorMessage(null);
       setIsSpeakingResult(false);
       stopSpeaking();
@@ -135,8 +179,11 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
       setErrorMessage(null);
       setScanResult(null);
       setInspectionResult(null);
+      setTrioResult(null);
 
-      if (mode === 'inspect_product') {
+      if (mode === 'level_trio') {
+        scanProductTrioWithAi(base64, file.type);
+      } else if (mode === 'inspect_product') {
         inspectProductWithAi(base64, file.type);
       } else {
         analyzeFridgeWithAi(base64, file.type);
@@ -146,6 +193,115 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
       setErrorMessage('No se pudo leer la imagen seleccionada');
     };
     reader.readAsDataURL(file);
+  };
+
+  // Escaneo de 1 producto para generar 3 recetas graduadas por nivel (Principiante, Intermedio y Experto)
+  const scanProductTrioWithAi = async (base64: string, mimeType: string) => {
+    setIsAnalyzing(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/product-trio-recipes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: base64,
+          mimeType,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Error al conectar con el servidor de análisis');
+      }
+
+      const data: ProductTrioResult = await res.json();
+      setTrioResult(data);
+      setSelectedLevelTab('principiante');
+
+      if (data.audioScript) {
+        setIsSpeakingResult(true);
+        speakSpanishText(data.audioScript, {
+          speaker: 'Chef Cero - Mentor',
+          badge: '3 Niveles Culinarios',
+          audioBase64: data.audioBase64,
+          audioMimeType: data.audioMimeType,
+          onEnd: () => setIsSpeakingResult(false),
+        });
+      }
+    } catch (err: any) {
+      console.warn('Chef Cero: Error analizando producto para trío de recetas:', err);
+      setErrorMessage('No pudimos generar las 3 recetas en este momento. Intenta con otra toma más clara o mejor luz.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleSpeakTrio = () => {
+    if (!trioResult?.audioScript) return;
+    setIsSpeakingResult(true);
+    speakSpanishText(trioResult.audioScript, {
+      speaker: 'Chef Cero - Mentor',
+      badge: '3 Niveles Culinarios',
+      audioBase64: trioResult.audioBase64,
+      audioMimeType: trioResult.audioMimeType,
+      onEnd: () => setIsSpeakingResult(false),
+    });
+  };
+
+  // Convertir una de las 3 recetas (Principiante, Intermedio o Experto) en Recipe para modo guiado en vivo
+  const handleConvertTrioRecipeAndCook = (trioRecipe: TrioRecipe) => {
+    let sampleImg = selectedImage || 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80';
+    let gallery = [
+      selectedImage || 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=800&q=80',
+    ];
+
+    const convertedRecipe: Recipe = {
+      id: trioRecipe.id || 'trio-' + Date.now(),
+      title: trioRecipe.title,
+      description: `${trioRecipe.description} Técnica protagonista: ${trioRecipe.heroTechnique}.`,
+      servings: 1,
+      totalTimeMinutes: trioRecipe.totalTimeMinutes || 12,
+      difficulty: trioRecipe.difficulty || (trioRecipe.level === 'principiante' ? 'Principiante Total' : trioRecipe.level === 'intermedio' ? 'Intermedio Casero' : 'Chef Maestro / Experto'),
+      requiredLevel: ((trioRecipe.levelNumber as 1 | 2 | 3 | 4 | 5) || (trioRecipe.level === 'principiante' ? 1 : trioRecipe.level === 'intermedio' ? 3 : 5)) as 1 | 2 | 3 | 4 | 5,
+      learningGoal: `Dominar ${trioRecipe.heroTechnique} con ${trioResult?.productDetected || 'el ingrediente'}`,
+      cuisine: 'economica_bbb',
+      cuisineName: trioRecipe.level === 'experto' ? 'Cocina Gourmet & Autor' : 'Cocina Casera Inteligente',
+      countryFlag: trioRecipe.level === 'principiante' ? '🟢' : trioRecipe.level === 'intermedio' ? '🟡' : '🔴',
+      isBudgetFriendly: true,
+      estimatedCostLabel: trioRecipe.level === 'experto' ? 'Gourmet (~$3.50 USD)' : 'Económica (<$2.00 USD)',
+      culturalSecret: trioRecipe.culturalSecret || `El secreto: paciencia con el calor y atención a los cambios de color y aroma.`,
+      imageUrl: sampleImg,
+      finishGalleryUrls: gallery,
+      finishVisualCheckpoints: [
+        'Color apetitoso y dorado homogéneo sin marcas quemadas.',
+        'Aroma equilibrado y textura jugosa.',
+        'Servido a buena temperatura listo para disfrutar.',
+      ],
+      pantrySubstitutes: [],
+      safetyAlerts: [
+        'Ten los ingredientes adicionales listos en platitos antes de prender el fuego.',
+        'Si la sartén humea o salpica fuerte, retírala de la hornalla unos segundos.',
+      ],
+      miseEnPlace: [
+        `${trioResult?.productDetected || 'Ingrediente principal'} lavado y acondicionado`,
+        ...trioRecipe.additionalIngredients.map((ing) => `${ing} medido y listo al alcance`),
+      ],
+      heatGuideExplanation: 'El primer paso es siempre con hornalla apagada para organizar la mesa sin prisas.',
+      steps: trioRecipe.steps.map((s, idx) => ({
+        stepNumber: s.stepNumber || idx + 1,
+        title: s.title || `Paso ${idx + 1}`,
+        instruction: s.instruction,
+        heatLevel: (s.heatLevel as any) || (idx === 0 ? 'apagado' : 'medio'),
+        tip: s.tip || (idx === 0 ? 'Mise en place: todo picado antes de encender el fuego.' : 'Respeta el fuego y no te distraigas.'),
+        stepImageUrl: idx === 0 ? 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=600&q=80' : sampleImg,
+        stepVisualCueLabel: idx === 0 ? 'Platitos listos con hornalla apagada' : `Punto del paso ${idx + 1}`,
+        timerSeconds: s.timerSeconds > 0 ? s.timerSeconds : undefined,
+        timerLabel: s.timerLabel || undefined,
+      })),
+    };
+
+    onStartCookingRecipe(convertedRecipe);
+    onClose();
   };
 
   // Inspección de un producto individual (Frescura, qué es, si está bueno y recetas)
@@ -365,25 +521,43 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-stone-950 shadow-xs ${
-                mode === 'inspect_product' ? 'bg-emerald-500' : 'bg-amber-500'
+                mode === 'level_trio'
+                  ? 'bg-amber-400'
+                  : mode === 'inspect_product'
+                  ? 'bg-emerald-500'
+                  : 'bg-amber-500'
               }`}>
-                {mode === 'inspect_product' ? <Search className="w-5 h-5 text-stone-950" /> : <Camera className="w-5 h-5 text-stone-950" />}
+                {mode === 'level_trio' ? (
+                  <Sparkles className="w-5 h-5 text-stone-950" />
+                ) : mode === 'inspect_product' ? (
+                  <Search className="w-5 h-5 text-stone-950" />
+                ) : (
+                  <Camera className="w-5 h-5 text-stone-950" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-extrabold text-base sm:text-lg text-stone-900 font-serif">
-                    {mode === 'inspect_product' ? '¿Está en buen estado mi comida?' : 'Escanear Nevera Completa'}
+                    {mode === 'level_trio'
+                      ? '3 Recetas por Nivel (Foto de 1 Producto)'
+                      : mode === 'inspect_product'
+                      ? '¿Está en buen estado mi comida?'
+                      : 'Escanear Nevera Completa'}
                   </h3>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                    mode === 'inspect_product'
+                    mode === 'level_trio'
+                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                      : mode === 'inspect_product'
                       ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                       : 'bg-amber-100 text-amber-900 border-amber-300'
                   }`}>
-                    Gemini Visión
+                    Gemini 3.8 Visión
                   </span>
                 </div>
                 <p className="text-xs text-stone-500">
-                  {mode === 'inspect_product'
+                  {mode === 'level_trio'
+                    ? 'Tómale foto a 1 producto o ingrediente: la IA te dará 3 recetas graduadas: Principiante, Medio y Experto.'
+                    : mode === 'inspect_product'
                     ? 'Saca 1 producto de tu nevera: la IA te dice qué es, si está bueno y cómo cocinarlo.'
                     : 'Apunta a tus estantes para sugerir recetas con varios ingredientes que tengas a mano.'}
                 </p>
@@ -401,8 +575,29 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
             </button>
           </div>
 
-          {/* Selector de modo estilo Pestañas */}
-          <div className="grid grid-cols-2 gap-1.5 p-1 bg-stone-200/70 rounded-2xl">
+          {/* Selector de modo estilo Pestañas (3 Modos) */}
+          <div className="grid grid-cols-3 gap-1.5 p-1 bg-stone-200/70 rounded-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('level_trio');
+                setSelectedImage(null);
+                setScanResult(null);
+                setInspectionResult(null);
+                setTrioResult(null);
+                setErrorMessage(null);
+                stopSpeaking();
+              }}
+              className={`py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                mode === 'level_trio'
+                  ? 'bg-white text-stone-900 shadow-xs ring-1 ring-black/5'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="truncate">3 Recetas por Nivel</span>
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -410,17 +605,18 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
                 setSelectedImage(null);
                 setScanResult(null);
                 setInspectionResult(null);
+                setTrioResult(null);
                 setErrorMessage(null);
                 stopSpeaking();
               }}
-              className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+              className={`py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 mode === 'inspect_product'
-                  ? 'bg-white text-stone-900 shadow-xs'
+                  ? 'bg-white text-stone-900 shadow-xs ring-1 ring-black/5'
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              <Search className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Inspeccionar 1 Producto</span>
+              <Search className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="truncate">Frescura 1 Alimento</span>
             </button>
 
             <button
@@ -430,17 +626,18 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
                 setSelectedImage(null);
                 setScanResult(null);
                 setInspectionResult(null);
+                setTrioResult(null);
                 setErrorMessage(null);
                 stopSpeaking();
               }}
-              className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+              className={`py-2 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 mode === 'fridge'
-                  ? 'bg-white text-stone-900 shadow-xs'
+                  ? 'bg-white text-stone-900 shadow-xs ring-1 ring-black/5'
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              <Camera className="w-3.5 h-3.5 text-amber-600" />
-              <span>Nevera Completa</span>
+              <Camera className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span className="truncate">Nevera Completa</span>
             </button>
           </div>
         </div>
@@ -451,7 +648,9 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
           {!selectedImage ? (
             <div
               className={`border-2 border-dashed rounded-3xl p-6 sm:p-10 text-center space-y-4 transition cursor-pointer ${
-                mode === 'inspect_product'
+                mode === 'level_trio'
+                  ? 'border-amber-300 hover:border-amber-500 hover:bg-amber-50/20'
+                  : mode === 'inspect_product'
                   ? 'border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50/20'
                   : 'border-amber-300 hover:border-amber-500 hover:bg-amber-50/20'
               }`}
@@ -467,19 +666,27 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
               />
 
               <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner ${
-                mode === 'inspect_product' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                mode === 'level_trio'
+                  ? 'bg-amber-100 text-amber-900'
+                  : mode === 'inspect_product'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-amber-100 text-amber-800'
               }`}>
-                {mode === 'inspect_product' ? '🔍' : '📸'}
+                {mode === 'level_trio' ? '🍳' : mode === 'inspect_product' ? '🔍' : '📸'}
               </div>
 
               <div>
                 <h4 className="font-extrabold text-stone-900 text-sm sm:text-base">
-                  {mode === 'inspect_product'
+                  {mode === 'level_trio'
+                    ? 'Toca aquí para fotografiar el ingrediente o producto'
+                    : mode === 'inspect_product'
                     ? 'Toca aquí para fotografiar el producto que sacaste'
                     : 'Toca aquí para fotografiar tu nevera o alacena'}
                 </h4>
-                <p className="text-xs text-stone-500 mt-1 max-w-md mx-auto">
-                  {mode === 'inspect_product'
+                <p className="text-xs text-stone-500 mt-1 max-w-md mx-auto leading-relaxed">
+                  {mode === 'level_trio'
+                    ? 'Apunta a un tomate, un huevo, pechuga de pollo, papa, berenjena o cualquier ingrediente para obtener 3 recetas: principiante, intermedio y experto.'
+                    : mode === 'inspect_product'
                     ? 'Apunta a una carne, un tomate, un huevo, leche, queso o cualquier sobra que tengas dudas si está buena.'
                     : 'Apunta a los estantes de tu refrigerador o los 3 o 4 ingredientes que tienes a mano.'}
                 </p>
@@ -516,17 +723,33 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
                 {isAnalyzing && (
                   <div className="absolute inset-0 bg-stone-950/70 backdrop-blur-xs flex flex-col items-center justify-center text-white p-4 space-y-3">
                     <div className={`w-10 h-10 border-4 border-t-transparent rounded-full animate-spin ${
-                      mode === 'inspect_product' ? 'border-emerald-400' : 'border-amber-400'
+                      mode === 'level_trio'
+                        ? 'border-amber-400'
+                        : mode === 'inspect_product'
+                        ? 'border-emerald-400'
+                        : 'border-amber-400'
                     }`} />
                     <div className="text-center">
                       <div className={`font-bold text-sm flex items-center justify-center gap-1.5 ${
-                        mode === 'inspect_product' ? 'text-emerald-300' : 'text-amber-300'
+                        mode === 'level_trio'
+                          ? 'text-amber-300'
+                          : mode === 'inspect_product'
+                          ? 'text-emerald-300'
+                          : 'text-amber-300'
                       }`}>
                         <Sparkles className="w-4 h-4 animate-pulse" />
-                        <span>{mode === 'inspect_product' ? 'Inspeccionando frescura y seguridad...' : 'Analizando tu refrigerador...'}</span>
+                        <span>
+                          {mode === 'level_trio'
+                            ? 'Chef Cero creando 3 recetas por nivel...'
+                            : mode === 'inspect_product'
+                            ? 'Inspeccionando frescura y seguridad...'
+                            : 'Analizando tu refrigerador...'}
+                        </span>
                       </div>
                       <p className="text-[11px] text-stone-300 mt-0.5">
-                        {mode === 'inspect_product'
+                        {mode === 'level_trio'
+                          ? 'Diseñando recetas para nivel Principiante, Intermedio y Experto'
+                          : mode === 'inspect_product'
                           ? 'Identificando alimento, fecha aproximada y recetas express'
                           : 'Detectando ingredientes y diseñando recetas'}
                       </p>
@@ -540,6 +763,7 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
                       setSelectedImage(null);
                       setScanResult(null);
                       setInspectionResult(null);
+                      setTrioResult(null);
                       stopSpeaking();
                     }}
                     className="absolute top-2 right-2 px-2.5 py-1.5 bg-stone-900/85 hover:bg-stone-900 text-white text-[11px] font-bold rounded-lg backdrop-blur-xs flex items-center gap-1.5 transition cursor-pointer"
@@ -555,6 +779,290 @@ export const FridgeScannerModal: React.FC<FridgeScannerModalProps> = ({
                 <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs flex items-center gap-2.5">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                   <span>{errorMessage}</span>
+                </div>
+              )}
+
+              {/* MODO 0: RESULTADOS DE 3 RECETAS POR NIVEL (PRINCIPIANTE, MEDIO, EXPERTO) */}
+              {trioResult && !isAnalyzing && (
+                <div className="space-y-4 animate-fade-in">
+                  {/* Tarjeta de Identificación y Calorimetría */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-100/40 to-stone-50 border border-amber-300 text-stone-900 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200/70">
+                      <div>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Producto Protagonista Reconocido:</span>
+                        </span>
+                        <h4 className="text-xl sm:text-2xl font-black font-serif text-stone-950 mt-0.5">
+                          {trioResult.productDetected}
+                        </h4>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-3 py-1 bg-amber-500 text-stone-950 font-black text-xs rounded-xl shadow-2xs">
+                          {trioResult.productCategory}
+                        </span>
+                        <span className="px-3 py-1 bg-white/90 border border-amber-300/80 text-stone-800 font-bold text-xs rounded-xl shadow-2xs flex items-center gap-1">
+                          <Zap className="w-3.5 h-3.5 text-amber-600" />
+                          <span>{trioResult.baseCaloriesEst}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-stone-700 mt-2.5 leading-relaxed font-medium italic">
+                      "{trioResult.chefObservation}"
+                    </p>
+
+                    {trioResult.audioScript && (
+                      <div className="mt-3 pt-2.5 border-t border-amber-200/50 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleSpeakTrio}
+                          className="px-3 py-1.5 bg-white hover:bg-stone-50 border border-amber-300 rounded-xl font-bold text-xs flex items-center gap-1.5 text-stone-800 transition cursor-pointer shadow-2xs"
+                        >
+                          <Volume2 className={`w-3.5 h-3.5 ${isSpeakingResult ? 'text-amber-600 animate-pulse' : 'text-stone-600'}`} />
+                          <span>{isSpeakingResult ? 'Chef hablando...' : 'Escuchar propuesta en voz alta'}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Selector de Nivel: 🟢 Principiante | 🟡 Intermedio | 🔴 Experto */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Elige tu nivel para cocinar hoy:</span>
+                      </h4>
+                      <span className="text-[11px] text-stone-400 font-medium">3 alternativas progresivas</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {trioResult.recipes.map((rec) => {
+                        const isSelected = selectedLevelTab === rec.level;
+
+                        return (
+                          <button
+                            key={rec.id || rec.level}
+                            type="button"
+                            onClick={() => setSelectedLevelTab(rec.level)}
+                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                              isSelected
+                                ? rec.level === 'principiante'
+                                  ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-400/50 shadow-xs'
+                                  : rec.level === 'intermedio'
+                                  ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-400/50 shadow-xs'
+                                  : 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-400/50 shadow-xs'
+                                : 'bg-stone-50 border-stone-200 hover:border-stone-300 hover:bg-stone-100/70'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-base sm:text-lg">
+                                  {rec.level === 'principiante' ? '🟢' : rec.level === 'intermedio' ? '🟡' : '🔴'}
+                                </span>
+                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                  isSelected
+                                    ? rec.level === 'principiante'
+                                      ? 'bg-emerald-600 text-white'
+                                      : rec.level === 'intermedio'
+                                      ? 'bg-amber-600 text-white'
+                                      : 'bg-rose-600 text-white'
+                                    : 'bg-stone-200 text-stone-700'
+                                }`}>
+                                  {rec.level === 'principiante' ? 'Nivel 1' : rec.level === 'intermedio' ? 'Nivel 3' : 'Nivel 5'}
+                                </span>
+                              </div>
+                              <h5 className="font-black text-xs sm:text-sm text-stone-900 mt-1 line-clamp-1">
+                                {rec.level === 'principiante' ? 'Principiante' : rec.level === 'intermedio' ? 'Intermedio' : 'Experto'}
+                              </h5>
+                              <p className="text-[11px] text-stone-500 line-clamp-1 mt-0.5">
+                                {rec.heroTechnique}
+                              </p>
+                            </div>
+
+                            <div className="mt-2.5 pt-2 border-t border-stone-200/60 flex items-center justify-between text-[11px] font-bold text-stone-600">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-stone-400" />
+                                <span>{rec.totalTimeMinutes}m</span>
+                              </span>
+                              <span className="text-stone-500 font-mono">
+                                ~{rec.estimatedCalories} kcal
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Detalle de la Receta Activa del Nivel Seleccionado */}
+                  {(() => {
+                    const activeRecipe = trioResult.recipes.find((r) => r.level === selectedLevelTab) || trioResult.recipes[0];
+                    if (!activeRecipe) return null;
+
+                    const badgeBg =
+                      activeRecipe.level === 'principiante'
+                        ? 'bg-emerald-600'
+                        : activeRecipe.level === 'intermedio'
+                        ? 'bg-amber-600'
+                        : 'bg-rose-600';
+
+                    const borderHighlight =
+                      activeRecipe.level === 'principiante'
+                        ? 'border-emerald-300'
+                        : activeRecipe.level === 'intermedio'
+                        ? 'border-amber-300'
+                        : 'border-rose-300';
+
+                    return (
+                      <div className={`p-4 sm:p-5 rounded-2xl bg-white border ${borderHighlight} shadow-sm space-y-4`}>
+                        {/* Header de la Receta */}
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className={`text-[10px] font-black uppercase text-white px-2.5 py-0.5 rounded-full ${badgeBg}`}>
+                                {activeRecipe.levelBadge}
+                              </span>
+                              <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md">
+                                {activeRecipe.difficulty}
+                              </span>
+                            </div>
+                            <h4 className="text-lg sm:text-xl font-black text-stone-900 font-serif">
+                              {activeRecipe.title}
+                            </h4>
+                            <p className="text-xs text-stone-600 mt-1 leading-relaxed">
+                              {activeRecipe.description}
+                            </p>
+                          </div>
+
+                          <div className="flex sm:flex-col gap-2 shrink-0">
+                            <div className="px-3 py-1.5 bg-stone-100 rounded-xl text-center">
+                              <span className="text-[10px] font-bold text-stone-400 block uppercase">Tiempo</span>
+                              <span className="text-xs font-black text-stone-800 flex items-center justify-center gap-1">
+                                <Clock className="w-3.5 h-3.5 text-stone-600" />
+                                {activeRecipe.totalTimeMinutes} min
+                              </span>
+                            </div>
+
+                            <div className="px-3 py-1.5 bg-amber-50 border border-amber-200/80 rounded-xl text-center">
+                              <span className="text-[10px] font-bold text-amber-700 block uppercase">Calorías</span>
+                              <span className="text-xs font-black text-amber-950 font-mono">
+                                ~{activeRecipe.estimatedCalories} kcal
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Técnica Clave y Secreto del Chef */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="p-3 bg-stone-50 rounded-xl border border-stone-200">
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-stone-500 block mb-0.5">
+                              🎯 Técnica Culinaria Clave:
+                            </span>
+                            <p className="font-bold text-stone-800">{activeRecipe.heroTechnique}</p>
+                          </div>
+
+                          {activeRecipe.culturalSecret && (
+                            <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 block mb-0.5">
+                                💡 Secreto de Chef Cero:
+                              </span>
+                              <p className="text-amber-950 font-medium">{activeRecipe.culturalSecret}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Ingredientes adicionales necesarios de alacena */}
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-stone-700 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Ingredientes básicos adicionales que necesitas:</span>
+                          </span>
+
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            <span className="px-2.5 py-1 bg-amber-100 text-amber-900 border border-amber-200 font-black rounded-xl text-xs flex items-center gap-1">
+                              ⭐ {trioResult.productDetected} (De tu foto)
+                            </span>
+                            {activeRecipe.additionalIngredients.map((item, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200/70 text-stone-800 font-semibold rounded-xl text-xs border border-stone-200 flex items-center gap-1 transition"
+                              >
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>{item}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Pasos Guiados Interactivos */}
+                        <div className="space-y-2 pt-1 border-t border-stone-100">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-stone-500 block">
+                            Pasos guiados de preparación ({activeRecipe.steps.length} pasos):
+                          </span>
+
+                          <div className="space-y-2">
+                            {activeRecipe.steps.map((st) => (
+                              <div
+                                key={st.stepNumber}
+                                className="p-3 bg-stone-50/80 rounded-xl border border-stone-200 text-xs flex items-start gap-2.5"
+                              >
+                                <span className="w-5 h-5 rounded-full bg-stone-900 text-white font-black flex items-center justify-center shrink-0 text-[10px]">
+                                  {st.stepNumber}
+                                </span>
+                                <div className="flex-1 space-y-0.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-extrabold text-stone-900">{st.title}</span>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md ${
+                                        st.heatLevel === 'apagado'
+                                          ? 'bg-stone-200 text-stone-700'
+                                          : st.heatLevel === 'bajo'
+                                          ? 'bg-blue-100 text-blue-800'
+                                          : st.heatLevel === 'medio'
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : 'bg-rose-100 text-rose-800'
+                                      }`}>
+                                        Fuego {st.heatLevel}
+                                      </span>
+                                      {st.timerSeconds > 0 && (
+                                        <span className="text-[10px] font-mono font-bold text-stone-600 bg-white px-1.5 py-0.2 rounded-md border border-stone-200">
+                                          ⏱️ {st.timerSeconds}s
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <p className="text-stone-600 leading-snug">{st.instruction}</p>
+                                  {st.tip && (
+                                    <p className="text-[11px] text-amber-800 font-medium pt-0.5">
+                                      💡 <em>{st.tip}</em>
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Gran Botón de Acción Principal para Iniciar en Vivo */}
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => handleConvertTrioRecipeAndCook(activeRecipe)}
+                            className="w-full py-3.5 px-4 bg-gradient-to-r from-stone-950 via-stone-900 to-stone-950 hover:from-amber-600 hover:to-amber-700 text-white font-black text-sm rounded-2xl flex items-center justify-center gap-2.5 transition-all shadow-md hover:shadow-lg cursor-pointer group"
+                          >
+                            <Flame className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
+                            <span>Cocinar este Nivel en Vivo con Chef Cero</span>
+                            <ChevronRight className="w-4 h-4 text-amber-300 ml-1" />
+                          </button>
+                          <p className="text-[11px] text-center text-stone-500 mt-1.5">
+                            Inicia el modo guiado paso a paso con temporizadores automáticos y asistencia de voz en tu cocina.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

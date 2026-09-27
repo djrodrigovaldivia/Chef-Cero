@@ -3,7 +3,7 @@ import { Recipe, UserProfile } from './types';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { CookingMode } from './components/CookingMode';
 import { SimpleModeView } from './components/SimpleModeView';
-import { FridgeScannerModal } from './components/FridgeScannerModal';
+import { FridgeScannerModal, ScannerMode } from './components/FridgeScannerModal';
 import { TechniquesShowcaseModal } from './components/TechniquesShowcaseModal';
 import { VisualDictionary } from './components/VisualDictionary';
 import { KitchenStorageMap } from './components/KitchenStorageMap';
@@ -118,7 +118,7 @@ export default function App() {
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [isShoppingListOpen, setIsShoppingListOpen] = useState(false);
   const [isFridgeScannerOpen, setIsFridgeScannerOpen] = useState(false);
-  const [scannerMode, setScannerMode] = useState<'inspect_product' | 'fridge'>('inspect_product');
+  const [scannerMode, setScannerMode] = useState<ScannerMode>('level_trio');
   const [isTechniquesOpen, setIsTechniquesOpen] = useState(false);
   const [voiceContext, setVoiceContext] = useState<{
     recipeTitle?: string;
@@ -240,7 +240,10 @@ export default function App() {
           setIsVoiceOpen(true);
         }}
         onOpenShoppingList={() => setIsShoppingListOpen(true)}
-        onOpenFridgeScanner={() => setIsFridgeScannerOpen(true)}
+        onOpenFridgeScanner={(mode?: ScannerMode) => {
+          if (mode) setScannerMode(mode);
+          setIsFridgeScannerOpen(true);
+        }}
         onOpenTechniques={() => setIsTechniquesOpen(true)}
         userProfile={userProfile}
       />
