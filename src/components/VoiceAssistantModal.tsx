@@ -8,10 +8,8 @@ import { GeminiLiveClient, LiveClientState, NetworkQuality, DetectedVoiceTone, P
 import { HandsFreeCookingListener } from '../utils/handsFreeListener';
 import { useVoiceConnection, downsampleTo16kHz } from '../hooks/useVoiceConnection';
 import { ReactiveLiveOrb } from './ReactiveLiveOrb';
-import { DirectWebSocketTutorialModal } from './DirectWebSocketTutorialModal';
 import { audioVisualizerBus } from '../utils/audioVisualizerBus';
 import { tokenBudgetTracker, TokenUsageStats } from '../utils/tokenBudgetTracker';
-import { TokenBudgetMonitor } from './TokenBudgetMonitor';
 
 interface VoiceAssistantModalProps {
   isOpen: boolean;
@@ -66,7 +64,6 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const { isSilent, toggleSilentMode } = useSilentMode();
   const [emergencyAlert, setEmergencyAlert] = useState<string | null>(null);
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
-  const [showWsTutorial, setShowWsTutorial] = useState<boolean>(false);
 
   // Estados para Modo Manos Sucias (Navegación de pasos por voz de latencia ultra-baja < 50ms)
   const [isDirtyHandsMode, setIsDirtyHandsMode] = useState<boolean>(false);
@@ -1047,68 +1044,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                     ⚡ Rápido
                   </button>
                 </div>
-
-                {/* Indicador Visual de Latencia de Red en Tiempo Real */}
-                {networkLatency !== null && (
-                  <button
-                    onClick={() => setShowLatencyDetails((prev) => !prev)}
-                    title={`Latencia de red en tiempo real: ${networkLatency}ms (${networkQuality}). Haz clic para ver el monitor técnico.`}
-                    className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition border ${
-                      networkQuality === 'excelente'
-                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900'
-                        : networkQuality === 'buena'
-                        ? 'bg-green-950/80 text-green-300 border-green-500/50 hover:bg-green-900'
-                        : networkQuality === 'moderada'
-                        ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 hover:bg-amber-900'
-                        : 'bg-rose-950/80 text-rose-300 border-rose-500/50 hover:bg-rose-900'
-                    }`}
-                  >
-                    <span className="relative flex h-2 w-2">
-                      <span
-                        className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                          networkQuality === 'excelente'
-                            ? 'bg-emerald-400'
-                            : networkQuality === 'buena'
-                            ? 'bg-green-400'
-                            : networkQuality === 'moderada'
-                            ? 'bg-amber-400'
-                            : 'bg-rose-400'
-                        }`}
-                      ></span>
-                      <span
-                        className={`relative inline-flex rounded-full h-2 w-2 ${
-                          networkQuality === 'excelente'
-                            ? 'bg-emerald-400'
-                            : networkQuality === 'buena'
-                            ? 'bg-green-400'
-                            : networkQuality === 'moderada'
-                            ? 'bg-amber-400'
-                            : 'bg-rose-400'
-                        }`}
-                      ></span>
-                    </span>
-                    <span>{networkLatency} ms</span>
-                    <Activity className="w-3 h-3 opacity-80" />
-                  </button>
-                )}
-
-                {/* Botón de Monitoreo Transparente de Tokens y Tiempo Estimado */}
-                <button
-                  onClick={() => setShowTokenDetails((prev) => !prev)}
-                  title={`Presupuesto de Voz: ~${tokenBudgetTracker.getEstimatedMinutesRemaining(tokenStats)} min restantes (${tokenStats.totalTokensUsed.toLocaleString()} tokens). Clic para ver control de consumo.`}
-                  className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition border ${
-                    isLiveActive
-                      ? 'bg-rose-950/90 text-rose-200 border-rose-500/60 hover:bg-rose-900'
-                      : 'bg-amber-950/60 text-amber-200 border-amber-500/40 hover:bg-amber-900/80'
-                  }`}
-                >
-                  <Coins className={`w-3.5 h-3.5 ${isLiveActive ? 'text-rose-400 animate-spin' : 'text-amber-400'}`} />
-                  <span>~{tokenBudgetTracker.getEstimatedMinutesRemaining(tokenStats)} min</span>
-                  <span className="text-[10px] text-amber-300/80 hidden sm:inline">
-                    ({tokenStats.sessionTokensUsed > 0 ? `+${tokenStats.sessionTokensUsed}` : '0'})
-                  </span>
-                </button>
               </div>
+
               <p className="text-xs text-amber-100">
                 {currentContext?.recipeTitle ? `Receta activa: ${currentContext.recipeTitle}` : 'Tu mentor de cocina en tiempo real'}
               </p>
@@ -1178,17 +1115,6 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               <span className="sm:hidden">
                 {isLiveActive ? 'Live ON' : 'Live'}
               </span>
-            </button>
-
-            {/* Botón de Tutorial WebSocket Client-to-Server */}
-            <button
-              onClick={() => setShowWsTutorial(true)}
-              title="Ver tutorial de integración WebSocket Client-to-Server (bypassing backend) para Gemini Live"
-              className="px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-indigo-700 to-purple-800 hover:from-indigo-600 hover:to-purple-700 text-white shadow-xs border border-indigo-400/30 cursor-pointer"
-            >
-              <span className="text-amber-300">⚡</span>
-              <span className="hidden md:inline">Tutorial WebSocket</span>
-              <span className="md:hidden">WS Tutorial</span>
             </button>
 
 
@@ -1279,123 +1205,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </div>
         </div>
 
-        {/* Monitor de Latencia y Diagnóstico Técnico en Tiempo Real */}
-        {showLatencyDetails && (
-          <div className="bg-stone-950 border-b border-stone-800 text-stone-200 px-4 py-3 text-xs animate-in fade-in slide-in-from-top-1 shadow-inner">
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-stone-800/80">
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
-                <span className="font-extrabold text-white uppercase tracking-wider text-[11px]">
-                  Monitor de Red y Latencia Física de Audio
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase ${
-                    networkQuality === 'excelente'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      : networkQuality === 'buena'
-                      ? 'bg-green-500/20 text-green-300 border border-green-500/40'
-                      : networkQuality === 'moderada'
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                  }`}
-                >
-                  Conexión {networkQuality}
-                </span>
-                <button
-                  onClick={() => setShowLatencyDetails(false)}
-                  className="text-stone-400 hover:text-stone-200 p-0.5"
-                  title="Ocultar monitor de latencia"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 my-2">
-              <div className="bg-stone-900/90 p-2 rounded-xl border border-stone-800">
-                <div className="text-[10px] text-stone-400 font-semibold uppercase">Ping RTT Red</div>
-                <div className="text-base font-black text-white font-mono mt-0.5 flex items-baseline gap-1">
-                  {networkLatency} <span className="text-[10px] font-normal text-stone-400">ms</span>
-                </div>
-                <div className="text-[9px] text-stone-400 mt-0.5">Ida y vuelta al servidor</div>
-              </div>
-
-              <div className="bg-stone-900/90 p-2 rounded-xl border border-stone-800">
-                <div className="text-[10px] text-stone-400 font-semibold uppercase">Búfer Audio</div>
-                <div className="text-base font-black text-emerald-400 font-mono mt-0.5 flex items-baseline gap-1">
-                  32 <span className="text-[10px] font-normal text-stone-400">ms</span>
-                </div>
-                <div className="text-[9px] text-stone-400 mt-0.5">512 muestras (16 kHz PCM)</div>
-              </div>
-
-              <div className="bg-stone-900/90 p-2 rounded-xl border border-stone-800">
-                <div className="text-[10px] text-stone-400 font-semibold uppercase">Jitter de Red</div>
-                <div className="text-base font-black text-amber-300 font-mono mt-0.5 flex items-baseline gap-1">
-                  ±{networkJitter} <span className="text-[10px] font-normal text-stone-400">ms</span>
-                </div>
-                <div className="text-[9px] text-stone-400 mt-0.5">Estabilidad del flujo</div>
-              </div>
-
-              <div className="bg-stone-900/90 p-2 rounded-xl border border-stone-800">
-                <div className="text-[10px] text-stone-400 font-semibold uppercase">Latencia Total Est.</div>
-                <div className="text-base font-black text-cyan-300 font-mono mt-0.5 flex items-baseline gap-1">
-                  ~{(networkLatency || 20) + 47} <span className="text-[10px] font-normal text-stone-400">ms</span>
-                </div>
-                <div className="text-[9px] text-stone-400 mt-0.5">Mínima física alcanzada</div>
-              </div>
-            </div>
-
-            <div className="mt-2 text-[11px] leading-relaxed bg-black/40 p-2.5 rounded-lg border border-stone-800/60">
-              {networkQuality === 'excelente' && (
-                <p className="text-emerald-300">
-                  ⚡ <strong>Conexión Excelente ({networkLatency} ms):</strong> Tu red responde al instante. La conversación con Gemini Live 3.8 y el Modo Manos Sucias se transmiten con fluidez instantánea en tiempo real.
-                </p>
-              )}
-              {networkQuality === 'buena' && (
-                <p className="text-green-300">
-                  ✨ <strong>Conexión Buena ({networkLatency} ms):</strong> Audio sin pérdidas y respuestas rápidas. La latencia total ronda los ~150 ms, prácticamente indistinguible de una llamada de voz.
-                </p>
-              )}
-              {networkQuality === 'moderada' && (
-                <p className="text-amber-300">
-                  ⏱️ <strong>Conexión Moderada ({networkLatency} ms):</strong> Puede haber una breve pausa de 200 a 300 ms antes de que el Chef empiece a hablar debido a la latencia de tu red WiFi o datos móviles.
-                </p>
-              )}
-              {networkQuality === 'lenta' && (
-                <p className="text-rose-300">
-                  📶 <strong>Conexión Lenta ({networkLatency} ms):</strong> Tu red presenta congestión temporal. El sistema mantiene activado el micro-búfer adaptativo para evitar que el audio se corte o se entrecorte.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Panel Desplegable de Monitoreo Transparente de Tokens y Presupuesto */}
-        {showTokenDetails && (
-          <div className="bg-stone-900 border-b border-stone-800 p-4 animate-in fade-in slide-in-from-top-1 shadow-xl">
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-stone-800">
-              <div className="flex items-center gap-2">
-                <Coins className="w-4 h-4 text-amber-400" />
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Consumo Transparente de Recursos en Sesión
-                </h4>
-              </div>
-              <button
-                onClick={() => setShowTokenDetails(false)}
-                className="text-stone-400 hover:text-white p-1 text-xs"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <TokenBudgetMonitor
-              isLiveActive={isLiveActive}
-              compact={false}
-              showTips={true}
-            />
-          </div>
-        )}
 
         {/* Panel Dedicado de Modo Manos Sucias (Ultra-Baja Latencia < 50ms para navegación de pasos) */}
         {isDirtyHandsMode && (
@@ -1947,12 +1757,6 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Modal del Tutorial de WebSocket Client-to-Server */}
-      <DirectWebSocketTutorialModal
-        isOpen={showWsTutorial}
-        onClose={() => setShowWsTutorial(false)}
-      />
     </div>
   );
 };

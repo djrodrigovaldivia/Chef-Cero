@@ -5,7 +5,7 @@ import {
   HelpCircle, ChefHat, Award, PlusCircle, CheckCircle2,
   Bell, BellRing, BellOff, Volume2, VolumeX, MessageSquare, Trash2, Smartphone, Check, AlertCircle,
   Sun, ShieldAlert, Ear, Eye, Wind, ChevronDown, ChevronUp, WifiOff,
-  ShoppingCart, Users, Mic, MicOff, Maximize2, Minimize2, Camera, HelpCircle as FaqIcon
+  ShoppingCart, Users, Mic, MicOff, Maximize2, Minimize2, Camera, HelpCircle as FaqIcon, Minus, Plus
 } from 'lucide-react';
 import { Recipe, RecipeStep, UserProfile, ActiveTimer, WorldCuisineId, CULINARY_LEVELS, CulinaryLevel, CulinaryLevelMeta } from '../types';
 import { STARTER_RECIPES, WORLD_CUISINES } from '../data/recipeData';
@@ -13,7 +13,7 @@ import { NOVICE_FAQS } from '../data/leftoversAndFaqData';
 import { playTimerCompletionChime, speakSpanishText } from '../utils/audioAlert';
 import { useOnlineStatus } from '../utils/useOnlineStatus';
 import { useSilentMode } from '../utils/useSilentMode';
-import { scaleIngredientText } from '../utils/servingsScaler';
+import { scaleIngredientText, getPanServingAdvice } from '../utils/servingsScaler';
 import { HandsFreeCookingListener } from '../utils/handsFreeListener';
 import { ShoppingListModal } from './ShoppingListModal';
 import {
@@ -41,6 +41,8 @@ import { StepVisualTextureCard } from './StepVisualTextureCard';
 import { InteractiveInstructionText } from './InteractiveInstructionText';
 import { IngredientSubstituteDrawer } from './IngredientSubstituteDrawer';
 import { ImmersiveCookModeModal } from './ImmersiveCookModeModal';
+import { convertIngredientUnits, MeasurementSystem } from '../utils/unitConverter';
+import { detectAllergensInIngredients } from '../utils/allergenDetector';
 
 interface CookingModeProps {
   userProfile: UserProfile;
@@ -127,6 +129,8 @@ export const CookingMode: React.FC<CookingModeProps> = ({
 
   // Desplegable de ciencia culinaria por paso
   const [isScienceExpanded, setIsScienceExpanded] = useState(false);
+  // Desplegable de radar sensorial por paso (Regla de 1 pantalla, 1 acción: colapsado por defecto para evitar sobrecarga)
+  const [isSensoryRadarExpanded, setIsSensoryRadarExpanded] = useState(false);
 
   // Flujo ordenado por etapas para eliminar el caos visual y la sobrecarga de información
   const [cookingStage, setCookingStage] = useState<'receta' | 'mise' | 'fuegos'>('receta');
@@ -136,8 +140,10 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   const [substituteTargetIngredient, setSubstituteTargetIngredient] = useState<string | null>(null);
   const [isImmersiveCookModeOpen, setIsImmersiveCookModeOpen] = useState(false);
 
-  // Escalador de porciones inteligente (1, 2, 4 porciones)
+  // Escalador de porciones inteligente (1, 2, 4 porciones) y conversor de unidades
   const [targetServings, setTargetServings] = useState<number>(selectedRecipe.servings || 2);
+  const [measurementSystem, setMeasurementSystem] = useState<MeasurementSystem>('household');
+  const detectedAllergens = React.useMemo(() => detectAllergensInIngredients(selectedRecipe.miseEnPlace), [selectedRecipe.miseEnPlace]);
   // Modal de Lista de Compras Compartible
   const [isShoppingModalOpen, setIsShoppingModalOpen] = useState(false);
   const [addedToShoppingNotice, setAddedToShoppingNotice] = useState<string | null>(null);
@@ -157,7 +163,34 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   // Sincronizar porciones objetivo cuando cambia la receta
   useEffect(() => {
     setTargetServings(selectedRecipe.servings || 2);
+    setGeneratedDishImageUrl(null);
   }, [selectedRecipe.id]);
+
+  // Imagen sugerida generada del plato terminado
+  const [generatedDishImageUrl, setGeneratedDishImageUrl] = useState<string | null>(null);
+  const [isGeneratingDishImage, setIsGeneratingDishImage] = useState<boolean>(false);
+
+  const handleGenerateDishImage = async () => {
+    setIsGeneratingDishImage(true);
+    try {
+      const res = await fetch('/api/recipe/generate-dish-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dishTitle: selectedRecipe.title,
+          description: selectedRecipe.description,
+        }),
+      });
+      const data = await res.json();
+      if (data?.imageUrl) {
+        setGeneratedDishImageUrl(data.imageUrl);
+      }
+    } catch (e) {
+      console.warn('Error generando imagen del plato terminado:', e);
+    } finally {
+      setIsGeneratingDishImage(false);
+    }
+  };
 
   // Evolución y Progresión Culinaria (Desde no saber nada hasta dominar la cocina)
   const [levelFilter, setLevelFilter] = useState<'all' | 'my_level' | number>('all');
@@ -1362,26 +1395,68 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                 </span>
               </div>
 
-              {/* Portion Scaler Control (1, 2, 4 porciones) */}
-              <div className="flex items-center gap-3">
-                <div className="flex items-center bg-white border border-stone-300 rounded-xl p-0.5 shadow-2xs">
-                  <span className="text-[11px] text-stone-500 font-bold px-2 flex items-center gap-1">
-                    <Users className="w-3.5 h-3.5 text-stone-400" />
+              {/* Portion Scaler & Unit Converter (Gramos vs Tazas) */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                {/* Stepper Reactivo [- N +] de 1 a 6 porciones (Estilo NYT Cooking) */}
+                <div className="flex items-center bg-white border border-stone-300 rounded-xl p-1 shadow-2xs">
+                  <span className="text-xs text-stone-600 font-bold px-2 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-amber-600" />
                     <span>Porciones:</span>
                   </span>
-                  {[1, 2, 4].map((serv) => (
+                  <div className="flex items-center gap-1 bg-stone-100/90 rounded-lg p-0.5 border border-stone-200">
                     <button
-                      key={serv}
-                      onClick={() => setTargetServings(serv)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        targetServings === serv
-                          ? 'bg-amber-500 text-stone-950 shadow-xs'
-                          : 'text-stone-600 hover:bg-stone-100'
-                      }`}
+                      type="button"
+                      onClick={() => setTargetServings(Math.max(1, targetServings - 1))}
+                      disabled={targetServings <= 1}
+                      className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 hover:text-amber-950 disabled:opacity-30 disabled:cursor-not-allowed transition font-black text-sm cursor-pointer shadow-2xs"
+                      title="Reducir una porción"
+                      aria-label="Reducir porción"
                     >
-                      {serv}
+                      <Minus className="w-3.5 h-3.5" />
                     </button>
-                  ))}
+                    <span className="w-7 text-center text-xs font-black text-stone-900">
+                      {targetServings}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setTargetServings(Math.min(6, targetServings + 1))}
+                      disabled={targetServings >= 6}
+                      className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 hover:text-amber-950 disabled:opacity-30 disabled:cursor-not-allowed transition font-black text-sm cursor-pointer shadow-2xs"
+                      title="Aumentar una porción"
+                      aria-label="Aumentar porción"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <span className="text-[11px] text-stone-400 font-medium px-2 hidden sm:inline">
+                    {targetServings === 1 ? 'persona' : 'personas'}
+                  </span>
+                </div>
+
+                {/* Conversor Automático: Métrico (g/ml) vs Tazas/Cucharadas */}
+                <div className="flex items-center bg-white border border-stone-300 rounded-xl p-0.5 shadow-2xs">
+                  <button
+                    onClick={() => setMeasurementSystem('metric')}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      measurementSystem === 'metric'
+                        ? 'bg-amber-500 text-stone-950 shadow-xs'
+                        : 'text-stone-600 hover:bg-stone-100'
+                    }`}
+                    title="Medidas en gramos (g) y mililitros (ml)"
+                  >
+                    ⚖️ Métrico (g)
+                  </button>
+                  <button
+                    onClick={() => setMeasurementSystem('household')}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      measurementSystem === 'household'
+                        ? 'bg-amber-500 text-stone-950 shadow-xs'
+                        : 'text-stone-600 hover:bg-stone-100'
+                    }`}
+                    title="Medidas en tazas y cucharadas caseras para principiantes sin báscula"
+                  >
+                    🥣 Tazas / Cdas
+                  </button>
                 </div>
 
                 {/* Add to Smart Shopping List */}
@@ -1391,7 +1466,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                       const currentList = JSON.parse(localStorage.getItem('chef_cero_shopping_list') || '[]');
                       const newItems = selectedRecipe.miseEnPlace.map((item, i) => ({
                         id: 'recipe-' + Date.now() + '-' + i,
-                        name: scaleIngredientText(item, selectedRecipe.servings || 2, targetServings),
+                        name: convertIngredientUnits(scaleIngredientText(item, selectedRecipe.servings || 2, targetServings), measurementSystem),
                         category: (item.toLowerCase().includes('cebolla') || item.toLowerCase().includes('ajo') || item.toLowerCase().includes('tomate') || item.toLowerCase().includes('papa') || item.toLowerCase().includes('zanahoria'))
                           ? 'Verdulería & Frutas'
                           : (item.toLowerCase().includes('pollo') || item.toLowerCase().includes('huevo') || item.toLowerCase().includes('carne'))
@@ -1417,6 +1492,38 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Advertencia Inteligente de Utensilios al Escalar Porciones */}
+            {getPanServingAdvice(targetServings, selectedRecipe.servings || 2) && (
+              <div className="bg-amber-50/95 border-b border-amber-200/90 px-4 py-2 flex items-center gap-2.5 text-xs text-amber-950 font-medium animate-fade-in">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>{getPanServingAdvice(targetServings, selectedRecipe.servings || 2)}</span>
+              </div>
+            )}
+
+            {/* Detector Preventivo de Alérgenos e Intolerancias (Estilo SideChef) */}
+            {detectedAllergens.length > 0 && (
+              <div className="bg-rose-50/90 border-b border-rose-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-rose-950 font-bold">
+                  <span className="text-base shrink-0">🛡️</span>
+                  <span className="shrink-0">Alérgenos en esta receta:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {detectedAllergens.map((alg) => (
+                      <span
+                        key={alg.id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-900 font-bold border border-rose-300 text-[11px]"
+                        title={`Sustituto seguro sugerido: ${alg.safeSubstituteTip}`}
+                      >
+                        <span>{alg.badge}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span className="text-[11px] text-rose-700 hidden md:inline">
+                  Toca ⇄ Sustituir para alternativas seguras sin estos alérgenos
+                </span>
+              </div>
+            )}
 
             {addedToShoppingNotice && (
               <div className="bg-emerald-100 border-b border-emerald-300 px-5 py-2 text-xs font-bold text-emerald-950 flex items-center gap-2">
@@ -1561,6 +1668,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               {selectedRecipe.miseEnPlace.map((item, idx) => {
                 const isChecked = !!miseEnPlaceChecked[idx];
                 const scaledItem = scaleIngredientText(item, selectedRecipe.servings || 2, targetServings);
+                const displayItem = convertIngredientUnits(scaledItem, measurementSystem);
                 return (
                   <div
                     key={idx}
@@ -1578,7 +1686,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                         <Square className="w-5 h-5 text-stone-400 shrink-0 mt-0.5" />
                       )}
                       <span className={`text-xs sm:text-sm font-medium leading-relaxed ${isChecked ? 'line-through text-stone-500' : ''}`}>
-                        {scaledItem}
+                        {displayItem}
                       </span>
                     </div>
 
@@ -2240,19 +2348,51 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               </span>
             )}
 
-            {/* Screen Wake Lock Toggle (Mantener Pantalla Activa) */}
+            {/* Escalador Dinámico de Porciones en Vivo [- N +] (Estilo NYT Cooking) */}
+            <div className="flex items-center bg-stone-100 border border-stone-300 rounded-xl p-0.5 shadow-2xs">
+              <span className="text-[11px] text-stone-600 font-bold px-1.5 hidden md:flex items-center gap-1">
+                <Users className="w-3 h-3 text-amber-600" />
+                <span>Porciones:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setTargetServings(Math.max(1, targetServings - 1))}
+                disabled={targetServings <= 1}
+                className="w-6 h-6 flex items-center justify-center rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 disabled:opacity-30 transition cursor-pointer text-xs"
+                title="Reducir porción"
+                aria-label="Reducir comensal"
+              >
+                <Minus className="w-3 h-3" />
+              </button>
+              <span className="w-6 text-center text-xs font-black text-stone-900" title={`${targetServings} ${targetServings === 1 ? 'persona' : 'personas'}`}>
+                {targetServings}
+              </span>
+              <button
+                type="button"
+                onClick={() => setTargetServings(Math.min(6, targetServings + 1))}
+                disabled={targetServings >= 6}
+                className="w-6 h-6 flex items-center justify-center rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 disabled:opacity-30 transition cursor-pointer text-xs"
+                title="Aumentar porción"
+                aria-label="Aumentar comensal"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Screen Wake Lock Toggle (Mantener Pantalla Activa - Estilo Tasty) */}
             <button
               onClick={() => setWakeLockPreferred(!wakeLockPreferred)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition cursor-pointer ${
                 wakeLockActive
-                  ? 'bg-amber-100 border-amber-300 text-amber-950 shadow-xs'
+                  ? 'bg-amber-100 border-amber-300 text-amber-950 shadow-xs ring-1 ring-amber-400/40'
                   : 'bg-stone-100 border-stone-200 text-stone-600 hover:bg-stone-200'
               }`}
-              title={wakeLockActive ? 'Pantalla despierta (no se apagará)' : 'Toca para mantener la pantalla siempre encendida mientras cocinas'}
+              title={wakeLockActive ? '💡 Pantalla activa: no se apagará mientras cocinas con las manos ocupadas' : 'Toca para mantener la pantalla siempre encendida'}
+              aria-label={wakeLockActive ? 'Desactivar pantalla activa' : 'Activar pantalla activa'}
             >
               <Sun className={`w-3.5 h-3.5 ${wakeLockActive ? 'text-amber-600 animate-spin-slow' : 'text-stone-400'}`} />
-              <span className="hidden sm:inline">{wakeLockActive ? 'Pantalla Activa' : 'Mantener Pantalla'}</span>
-              <span className="sm:hidden">{wakeLockActive ? 'Activa' : 'Pantalla'}</span>
+              <span className="hidden sm:inline">{wakeLockActive ? '💡 Pantalla activa' : 'Mantener Pantalla'}</span>
+              <span className="sm:hidden">{wakeLockActive ? '💡 Activa' : 'Pantalla'}</span>
             </button>
 
             {/* Modo Silencioso / Subtítulos en Pantalla Toggle */}
@@ -2425,9 +2565,19 @@ export const CookingMode: React.FC<CookingModeProps> = ({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               {selectedRecipe.miseEnPlace.map((item, idx) => (
-                <div key={idx} className="p-2 bg-white rounded-lg border border-stone-200 text-stone-700 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-                  <span>{scaleIngredientText(item, selectedRecipe.servings || 2, targetServings)}</span>
+                <div key={idx} className="p-2 bg-white rounded-lg border border-stone-200 text-stone-700 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                    <span className="text-xs">{convertIngredientUnits(scaleIngredientText(item, selectedRecipe.servings || 2, targetServings), measurementSystem)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSubstituteTargetIngredient(item)}
+                    className="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-amber-100 hover:text-amber-950 text-stone-600 text-[10px] font-bold transition shrink-0"
+                    title="Ver sustituto"
+                  >
+                    ⇄ Sustituir
+                  </button>
                 </div>
               ))}
             </div>
@@ -2482,9 +2632,83 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               text={currentStep.instruction}
               stepNumber={currentStep.stepNumber}
               activeTimers={activeTimers}
-              className="text-base sm:text-lg font-bold text-stone-900 leading-snug"
+              className="text-xl sm:text-2xl md:text-3xl font-black text-stone-950 leading-relaxed tracking-tight py-1"
               onStartTimer={(seconds, label) => handleStartTimer(seconds, label, currentStep.stepNumber)}
             />
+
+            {/* Temporizador gigante y visible a 1 metro de distancia (Estilo Kitchen Stories / NYT) */}
+            {currentStep.timerSeconds && currentStep.timerSeconds > 0 && (() => {
+              const stepTimer = activeTimers.find(
+                (t) => t.stepIndex === currentStep.stepNumber || t.label === (currentStep.timerLabel || `Paso ${currentStep.stepNumber}`)
+              );
+
+              if (stepTimer) {
+                return (
+                  <div className="mt-3 p-4 bg-amber-500/15 border-2 border-amber-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3.5 h-3.5 rounded-full shrink-0 ${stepTimer.isRunning ? 'bg-emerald-500 animate-ping' : 'bg-stone-400'}`} />
+                      <div>
+                        <span className="text-[11px] font-bold text-stone-600 block uppercase tracking-wider">
+                          ⏱️ Temporizador en curso ({stepTimer.label})
+                        </span>
+                        <div className="text-3xl sm:text-4xl font-black font-mono text-stone-950 tracking-tight">
+                          {formatSeconds(stepTimer.remainingSeconds)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleTimerPause(stepTimer.id)}
+                        className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                      >
+                        {stepTimer.isRunning ? (
+                          <>
+                            <Pause className="w-3.5 h-3.5 fill-current" /> Pausar
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3.5 h-3.5 fill-current" /> Reanudar
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStartTimer(stepTimer.remainingSeconds + 60, stepTimer.label, stepTimer.stepIndex)}
+                        className="px-3 py-2 bg-amber-200 hover:bg-amber-300 text-amber-950 font-black rounded-xl text-xs transition cursor-pointer shadow-2xs"
+                        title="Sumar 1 minuto al temporizador"
+                      >
+                        +1 min
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="mt-3 pt-2.5 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleStartTimer(
+                        currentStep.timerSeconds!,
+                        currentStep.timerLabel || `Paso ${currentStep.stepNumber}`,
+                        currentStep.stepNumber
+                      )
+                    }
+                    className="px-5 py-3 bg-amber-500 hover:bg-amber-600 active:scale-98 text-stone-950 font-black rounded-xl text-sm flex items-center gap-2.5 shadow-xs transition cursor-pointer"
+                  >
+                    <Clock className="w-5 h-5 text-stone-950" />
+                    <span>Iniciar temporizador: {formatSeconds(currentStep.timerSeconds)}</span>
+                    <Play className="w-3.5 h-3.5 fill-stone-950 ml-1" />
+                  </button>
+                  <span className="text-xs text-stone-500 font-medium hidden sm:inline">
+                    🔔 Aviso con sonido y pantalla encendida
+                  </span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Marcador Dinámico de Textura, Color y Referencia Visual del Paso */}
@@ -2503,50 +2727,75 @@ export const CookingMode: React.FC<CookingModeProps> = ({
             }}
           />
 
-          {/* Galería Visual de Plato Terminado (Solo en el último paso para ver cómo debe quedar emplatado) */}
+          {/* Galería e Imagen Sugerida del Plato Terminado tras el último paso de la guía */}
           {currentStepIndex === selectedRecipe.steps.length - 1 && (
-            <div className="bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-100/30 border-2 border-amber-400 rounded-2xl p-4 sm:p-5 space-y-3 animate-fade-in shadow-sm">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center text-lg font-bold shadow-xs">
-                  🏆
+            <div className="bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-100/30 border-2 border-amber-400 rounded-3xl p-5 sm:p-6 space-y-4 animate-fade-in shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center text-xl font-bold shadow-xs">
+                    🏆
+                  </div>
+                  <div>
+                    <h4 className="text-base sm:text-lg font-black text-stone-900 font-serif">
+                      ¡Último paso completado! Imagen sugerida del plato terminado
+                    </h4>
+                    <p className="text-xs text-stone-600">
+                      Así es exactamente como debe verse tu preparación lista para servir y disfrutar.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm sm:text-base font-black text-stone-900 font-serif">
-                    ¡Meta Final Lograda! Así debe lucir tu plato terminado:
-                  </h4>
-                  <p className="text-xs text-stone-600">
-                    Compara tu plato con estas fotos de referencia de cómo debe verse listo para comer.
-                  </p>
-                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGenerateDishImage}
+                  disabled={isGeneratingDishImage}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-stone-950 text-xs font-black flex items-center justify-center gap-2 shadow-xs transition active:scale-98 cursor-pointer shrink-0"
+                  title="Generar o regenerar una imagen del plato terminado con inteligencia artificial"
+                >
+                  {isGeneratingDishImage ? (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                      <span>Generando foto con IA...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 fill-stone-950" />
+                      <span>{generatedDishImageUrl ? 'Regenerar foto con IA' : 'Generar foto con IA'}</span>
+                    </>
+                  )}
+                </button>
               </div>
 
-              {/* Grid de 1 a 3 fotos del plato final */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                {(selectedRecipe.finishGalleryUrls && selectedRecipe.finishGalleryUrls.length > 0
-                  ? selectedRecipe.finishGalleryUrls
-                  : [selectedRecipe.imageUrl || 'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=800&q=80']
-                ).map((url, idx) => (
-                  <div key={idx} className="rounded-xl overflow-hidden border border-stone-200 shadow-2xs h-36 bg-stone-900 relative group">
-                    <img
-                      src={url}
-                      alt={`Presentación final ${idx + 1}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <span className="absolute bottom-1.5 left-1.5 bg-stone-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
-                      Foto #{idx + 1}
-                    </span>
-                  </div>
-                ))}
+              {/* Foto destacada en alta resolución del plato terminado */}
+              <div className="rounded-2xl overflow-hidden border-2 border-amber-300 shadow-md bg-stone-900 relative group">
+                <img
+                  src={
+                    generatedDishImageUrl ||
+                    selectedRecipe.finishGalleryUrls?.[0] ||
+                    selectedRecipe.imageUrl ||
+                    '/src/assets/images/tortilla_espanola_terminada_1790559726137.jpg'
+                  }
+                  alt={selectedRecipe.title}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-56 sm:h-72 object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                />
+                <div className="absolute top-3 left-3 bg-stone-900/85 backdrop-blur-xs text-white text-xs font-bold px-3 py-1 rounded-xl shadow-xs flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Presentación final sugerida</span>
+                </div>
+                <div className="absolute bottom-3 right-3 bg-emerald-600 text-white text-xs font-black px-3 py-1 rounded-xl shadow-xs">
+                  Listo para servir
+                </div>
               </div>
 
               {/* Puntos visuales de comprobación del plato */}
               {selectedRecipe.finishVisualCheckpoints && selectedRecipe.finishVisualCheckpoints.length > 0 && (
-                <div className="bg-white p-3.5 rounded-xl border border-amber-300/80 space-y-1.5 text-xs text-stone-800 shadow-2xs">
-                  <div className="font-extrabold text-amber-950 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Puntos clave de éxito visual:</span>
+                <div className="bg-white p-4 rounded-2xl border border-amber-300/80 space-y-2 text-xs text-stone-800 shadow-2xs">
+                  <div className="font-extrabold text-amber-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>¿Cómo saber si te quedó perfecto? (Checkpoints visuales):</span>
                   </div>
-                  <ul className="space-y-1 text-stone-700 pl-4 list-disc font-medium">
+                  <ul className="space-y-1.5 text-stone-700 pl-4 list-disc font-medium">
                     {selectedRecipe.finishVisualCheckpoints.map((pt, i) => (
                       <li key={i}>{pt}</li>
                     ))}
@@ -2556,158 +2805,108 @@ export const CookingMode: React.FC<CookingModeProps> = ({
             </div>
           )}
 
-          {/* Radar Sensorial: Los 3 Sentidos del Paso (Oído, Vista, Olfato) */}
-          <div className="bg-amber-50/70 border border-amber-200/90 rounded-xl p-3.5 space-y-2">
-            <div className="text-[11px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
-              <span>Radar Sensorial (Comprueba con tus sentidos)</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
-              <div className="p-2.5 bg-white/90 rounded-lg border border-amber-200/70 flex items-start gap-2">
-                <Ear className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="text-[11px] block font-bold text-stone-800">Oído:</strong>
-                  <span className="text-xs text-stone-700 leading-tight">
-                    {currentStep.sensoryCues?.sound || (
-                      currentStep.heatLevel === 'bajo'
-                        ? 'Susurro constante y suave'
-                        : currentStep.heatLevel === 'medio'
-                        ? 'Chisporroteo rítmico y controlado'
-                        : 'Hervor activo y alegre'
-                    )}
-                  </span>
+          {/* Bloques Secundarios Colapsables (Regla de 1 pantalla, 1 acción: mantiene la pantalla despejada y sin distracciones) */}
+          <div className="space-y-2.5 pt-2">
+            {/* Acordeón Radar Sensorial: Oído, Vista, Olfato */}
+            <div className="border border-amber-200/90 rounded-2xl overflow-hidden bg-amber-50/60 shadow-2xs transition">
+              <button
+                type="button"
+                onClick={() => setIsSensoryRadarExpanded(!isSensoryRadarExpanded)}
+                className="w-full px-4 py-2.5 text-left text-xs font-bold text-amber-950 hover:bg-amber-100/70 flex items-center justify-between transition cursor-pointer"
+                aria-expanded={isSensoryRadarExpanded}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="text-sm">👁️👂👃</span>
+                  <span className="font-extrabold">Radar Sensorial: ¿Cómo comprobar si está listo?</span>
+                </span>
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-800 font-semibold">
+                  <span>{isSensoryRadarExpanded ? 'Ocultar' : 'Ver sentidos'}</span>
+                  {isSensoryRadarExpanded ? (
+                    <ChevronUp className="w-4 h-4 text-amber-700" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-amber-700" />
+                  )}
                 </div>
-              </div>
+              </button>
 
-              <div className="p-2.5 bg-white/90 rounded-lg border border-amber-200/70 flex items-start gap-2">
-                <Eye className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="text-[11px] block font-bold text-stone-800">Vista:</strong>
-                  <span className="text-xs text-stone-700 leading-tight">
-                    {currentStep.sensoryCues?.sight || 'Tono dorado homogéneo sin bordes ennegrecidos'}
-                  </span>
-                </div>
-              </div>
+              {isSensoryRadarExpanded && (
+                <div className="p-3.5 pt-1.5 border-t border-amber-200/60 bg-white/70 animate-fade-in">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+                    <div className="p-2.5 bg-white rounded-xl border border-amber-200/70 flex items-start gap-2 shadow-2xs">
+                      <Ear className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-[11px] block font-bold text-stone-800">Oído:</strong>
+                        <span className="text-xs text-stone-700 leading-tight">
+                          {currentStep.sensoryCues?.sound || (
+                            currentStep.heatLevel === 'bajo'
+                              ? 'Susurro constante y suave'
+                              : currentStep.heatLevel === 'medio'
+                              ? 'Chisporroteo rítmico y controlado'
+                              : 'Hervor activo y alegre'
+                          )}
+                        </span>
+                      </div>
+                    </div>
 
-              <div className="p-2.5 bg-white/90 rounded-lg border border-amber-200/70 flex items-start gap-2">
-                <Wind className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="text-[11px] block font-bold text-stone-800">Olfato:</strong>
-                  <span className="text-xs text-stone-700 leading-tight">
-                    {currentStep.sensoryCues?.smell || 'Aroma dulce y agradable; si hay humo denso, baja el fuego'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+                    <div className="p-2.5 bg-white rounded-xl border border-amber-200/70 flex items-start gap-2 shadow-2xs">
+                      <Eye className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-[11px] block font-bold text-stone-800">Vista:</strong>
+                        <span className="text-xs text-stone-700 leading-tight">
+                          {currentStep.sensoryCues?.sight || 'Tono dorado homogéneo sin bordes ennegrecidos'}
+                        </span>
+                      </div>
+                    </div>
 
-          {/* Consejo vital de mentor */}
-          {currentStep.tip && (
-            <div className="bg-white border border-stone-200 rounded-xl p-3.5 text-xs text-stone-900 flex items-start gap-2.5 shadow-2xs">
-              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <strong className="block font-bold text-stone-950">Consejo de mentor:</strong>
-                <span className="text-stone-700 leading-relaxed">{currentStep.tip}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Acordeón opcional: ¿Por qué se hace así? (Ciencia Culinaria) */}
-          <div className="border border-stone-200 rounded-xl overflow-hidden bg-white">
-            <button
-              onClick={() => setIsScienceExpanded(!isScienceExpanded)}
-              className="w-full px-3.5 py-2.5 text-left text-xs font-bold text-stone-700 hover:text-stone-950 hover:bg-stone-50 flex items-center justify-between transition"
-            >
-              <span className="flex items-center gap-1.5">
-                <span>🧠 ¿Por qué se hace así? (La ciencia detrás del paso)</span>
-              </span>
-              {isScienceExpanded ? (
-                <ChevronUp className="w-4 h-4 text-stone-500" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-stone-500" />
-              )}
-            </button>
-            {isScienceExpanded && (
-              <div className="px-3.5 pb-3 pt-1 text-xs text-stone-600 border-t border-stone-100 bg-stone-50/50 leading-relaxed">
-                {currentStep.whyItWorks ||
-                  'Cocinar con fuego medido permite que los azúcares y proteínas caramelicen lentamente sin carbonizarse, conservando humedad, jugosidad y textura en el plato terminado.'}
-              </div>
-            )}
-          </div>
-
-          {/* Integrated timer button for this step */}
-          {currentStep.timerSeconds && currentStep.timerSeconds > 0 && (() => {
-            const stepTimer = activeTimers.find(
-              (t) => t.stepIndex === currentStep.stepNumber || t.label === (currentStep.timerLabel || `Paso ${currentStep.stepNumber}`)
-            );
-
-            if (stepTimer) {
-              return (
-                <div className="pt-2 p-3.5 bg-amber-500/10 border border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-3 h-3 rounded-full ${stepTimer.isRunning ? 'bg-emerald-500 animate-ping' : 'bg-stone-400'}`} />
-                    <div>
-                      <span className="text-xs font-bold text-stone-900 block">
-                        Temporizador de este paso: {stepTimer.label}
-                      </span>
-                      <span className="text-[11px] text-amber-900 font-medium">
-                        {stepTimer.remainingSeconds > 0
-                          ? `Restante: ${formatSeconds(stepTimer.remainingSeconds)} (Web Push activo en segundo plano)`
-                          : '¡Tiempo cumplido! Apaga el fuego'}
-                      </span>
+                    <div className="p-2.5 bg-white rounded-xl border border-amber-200/70 flex items-start gap-2 shadow-2xs">
+                      <Wind className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-[11px] block font-bold text-stone-800">Olfato:</strong>
+                        <span className="text-xs text-stone-700 leading-tight">
+                          {currentStep.sensoryCues?.smell || 'Aroma dulce y agradable; si hay humo denso, baja el fuego'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleTimerPause(stepTimer.id)}
-                      className="px-3 py-1.5 bg-stone-900 text-white hover:bg-stone-800 rounded-lg text-xs font-bold flex items-center gap-1 transition"
-                    >
-                      {stepTimer.isRunning ? (
-                        <>
-                          <Pause className="w-3 h-3" /> Pausar
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3 h-3" /> Reanudar
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => handleStartTimer(stepTimer.remainingSeconds + 60, stepTimer.label, stepTimer.stepIndex)}
-                      className="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold rounded-lg text-xs transition"
-                      title="Sumar 1 minuto"
-                    >
-                      +1 min
-                    </button>
-                  </div>
                 </div>
-              );
-            }
+              )}
+            </div>
 
-            return (
-              <div className="pt-2 flex flex-wrap items-center gap-3">
-                <button
-                  onClick={() =>
-                    handleStartTimer(
-                      currentStep.timerSeconds!,
-                      currentStep.timerLabel || `Paso ${currentStep.stepNumber}`,
-                      currentStep.stepNumber
-                    )
-                  }
-                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-stone-950 font-bold rounded-xl text-xs flex items-center gap-2 shadow transition-all"
-                >
-                  <Clock className="w-4 h-4" />
-                  <span>
-                    Iniciar temporizador: {formatSeconds(currentStep.timerSeconds)} ({currentStep.timerLabel})
-                  </span>
-                  <Bell className="w-3 h-3 text-stone-800" />
-                </button>
-                <span className="text-[11px] text-stone-500">
-                  Te avisaremos con sonido y push aunque minimices esta pestaña
-                </span>
+            {/* Consejo de Mentor (Diseño limpio y suave) */}
+            {currentStep.tip && (
+              <div className="bg-white border border-stone-200/90 rounded-xl p-3 text-xs text-stone-900 flex items-start gap-2.5 shadow-2xs">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold text-stone-950">Consejo de mentor:</strong>
+                  <span className="text-stone-700 leading-relaxed">{currentStep.tip}</span>
+                </div>
               </div>
-            );
-          })()}
+            )}
+
+            {/* Acordeón opcional: ¿Por qué se hace así? (Ciencia Culinaria) */}
+            <div className="border border-stone-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setIsScienceExpanded(!isScienceExpanded)}
+                className="w-full px-3.5 py-2.5 text-left text-xs font-bold text-stone-700 hover:text-stone-950 hover:bg-stone-50 flex items-center justify-between transition cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span>🧠 ¿Por qué se hace así? (La ciencia detrás del paso)</span>
+                </span>
+                {isScienceExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-stone-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-stone-500" />
+                )}
+              </button>
+              {isScienceExpanded && (
+                <div className="px-3.5 pb-3 pt-1 text-xs text-stone-600 border-t border-stone-100 bg-stone-50/50 leading-relaxed animate-fade-in">
+                  {currentStep.whyItWorks ||
+                    'Cocinar con fuego medido permite que los azúcares y proteínas caramelicen lentamente sin carbonizarse, conservando humedad, jugosidad y textura en el plato terminado.'}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Step Navigation Controls */}
@@ -2753,6 +2952,33 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           )}
         </div>
 
+        {/* Notas y Trucos de la Comunidad de Aprendices (Estilo NYT Cooking Notes) */}
+        <div className="mt-4 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-2.5 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-amber-950 flex items-center gap-1.5 uppercase tracking-wider">
+              <span>💬 Trucos de otros aprendices:</span>
+            </span>
+            <span className="text-[11px] text-amber-800 font-semibold">
+              Comunidad Chef Cero
+            </span>
+          </div>
+
+          <div className="space-y-2 text-xs text-stone-700">
+            <div className="p-3 bg-white/90 rounded-xl border border-amber-200/60 shadow-2xs">
+              <span className="font-black text-stone-900 block mb-0.5">Carlos M. (Aprendiz Nivel 1):</span>
+              <p className="leading-relaxed">
+                "Si tu vitrocerámica o sartén tarda en calentar, calienta la sartén vacía 30 segundos antes de poner el aceite. Evita que los alimentos absorban grasa fría."
+              </p>
+            </div>
+            <div className="p-3 bg-white/90 rounded-xl border border-amber-200/60 shadow-2xs">
+              <span className="font-black text-stone-900 block mb-0.5">Elena R. (Aprendiz Nivel 2):</span>
+              <p className="leading-relaxed">
+                "Apagar la hornalla 1 minuto antes y dejar que termine con el calor residual fue la clave. Antes siempre se me pasaban de cocción."
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Enlace para volver a revisar Mise en Place si lo necesita */}
         <div className="pt-3 flex items-center justify-between border-t border-stone-100 text-xs">
           <button
@@ -2760,7 +2986,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               setCookingStage('mise');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className="text-stone-500 hover:text-stone-800 flex items-center gap-1 font-medium transition"
+            className="text-stone-500 hover:text-stone-800 flex items-center gap-1 font-medium transition cursor-pointer"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
             <span>Volver a Fase 2 (Mise en Place)</span>
@@ -2878,8 +3104,9 @@ export const CookingMode: React.FC<CookingModeProps> = ({
             {/* Foto de Referencia del Plato Terminado */}
             <div className="rounded-xl overflow-hidden border border-stone-200 bg-stone-900 relative">
               <img
-                src={selectedRecipe.finishGalleryUrls?.[0] || selectedRecipe.imageUrl || 'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=800&q=80'}
+                src={generatedDishImageUrl || selectedRecipe.finishGalleryUrls?.[0] || selectedRecipe.imageUrl || '/src/assets/images/tortilla_espanola_terminada_1790559726137.jpg'}
                 alt={selectedRecipe.title}
+                referrerPolicy="no-referrer"
                 className="w-full h-36 object-cover opacity-90"
               />
               <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-stone-950/90 via-stone-950/50 to-transparent p-3 text-white flex items-center justify-between">

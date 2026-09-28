@@ -99,11 +99,9 @@ export const STARTER_RECIPES: Recipe[] = [
         reason: 'El resultado de textura y cocción es exactamente el mismo a menor costo.',
       },
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/src/assets/images/arroz_blanco_terminado_1790559743226.jpg',
     finishGalleryUrls: [
-      'https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1536304993881-ff6e9eefa2a6?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1594998893017-36147cbcae05?auto=format&fit=crop&w=800&q=80',
+      '/src/assets/images/arroz_blanco_terminado_1790559743226.jpg',
     ],
     finishVisualCheckpoints: [
       'Granos individuales largos, blancos y bien separados con brillo tenue.',
@@ -793,7 +791,15 @@ export const STARTER_RECIPES: Recipe[] = [
         reason: 'Queda con un perfil estilo taberna napolitana delicioso y siempre disponible.',
       },
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1572441713132-c542fc4fe282?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/src/assets/images/pasta_pomodoro_terminada_1790559770491.jpg',
+    finishGalleryUrls: [
+      '/src/assets/images/pasta_pomodoro_terminada_1790559770491.jpg',
+    ],
+    finishVisualCheckpoints: [
+      'Salsa de tomate rojo brillante que cubre la pasta de forma homogénea.',
+      'Hojas de albahaca fresca intactas y aroma vivo.',
+      'Sin charco de agua líquida en el fondo del plato.',
+    ],
     safetyAlerts: [
       'La salsa de tomate burbujea y puede salpicar: mantén la tapa a medio poner como escudo.',
     ],
@@ -872,7 +878,15 @@ export const STARTER_RECIPES: Recipe[] = [
         reason: 'Baja el costo al mínimo y deja las patatas igual de tiernas.',
       },
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1541518763669-27fef04b14ea?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/src/assets/images/tortilla_espanola_terminada_1790559726137.jpg',
+    finishGalleryUrls: [
+      '/src/assets/images/tortilla_espanola_terminada_1790559726137.jpg',
+    ],
+    finishVisualCheckpoints: [
+      'Superficie dorada uniforme sin quemaduras.',
+      'Corte limpio con interior jugoso y suave.',
+      'Bordes redondeados y sellados con firmeza.',
+    ],
     safetyAlerts: [
       'Al dar la vuelta a la tortilla: usa un plato plano MÁS GRANDE que la sartén. Hazlo sobre el fregadero o sobre la mesada con un trapo debajo.',
       'Sujeta firmemente el centro del plato con la palma de una mano y el mango de la sartén con la otra; gira con un movimiento rápido y decidido.',
@@ -955,7 +969,15 @@ export const STARTER_RECIPES: Recipe[] = [
         reason: 'La técnica de calor bajo es lo que define el 95% de la textura.',
       },
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/src/assets/images/huevos_revueltos_terminados_1790559759573.jpg',
+    finishGalleryUrls: [
+      '/src/assets/images/huevos_revueltos_terminados_1790559759573.jpg',
+    ],
+    finishVisualCheckpoints: [
+      'Color amarillo suave sin zonas tostadas ni costra marrón.',
+      'Textura cremosa y aterciopelada que no se reseca.',
+      'Cebollino fresco picado fino decorando la superficie.',
+    ],
     safetyAlerts: [
       'Usa solo espátula de silicona o cuchara de madera en la sartén antiadherente.',
       'El fuego alto es el enemigo mortal de los huevos: los deshidrata en 10 segundos.',

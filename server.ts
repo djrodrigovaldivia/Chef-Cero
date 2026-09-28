@@ -1577,26 +1577,52 @@ audioScript: un guión corto (máximo 3 oraciones) con tono cálido y motivador 
   }
 });
 
-// 2. Recipe Planner & "Tengo 3 ingredientes" Generator
+function getAppetizingFoodImageUrl(title: string, description?: string): string {
+  const t = (title + ' ' + (description || '')).toLowerCase();
+  if (/pizza/i.test(t)) return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=800&q=80';
+  if (/pasta|fideo|espagueti|tallar|lasa[ñn]a/i.test(t)) return 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=800&q=80';
+  if (/arroz|paella|risotto|chaufa/i.test(t)) return 'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80';
+  if (/huevo|tortilla|omelet|revuelto/i.test(t)) return 'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80';
+  if (/pollo|alita/i.test(t)) return 'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=800&q=80';
+  if (/carne|bistec|asado|lomo|hamburg/i.test(t)) return 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80';
+  if (/pescado|salmon|atun|marisco/i.test(t)) return 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80';
+  if (/sopa|caldo|crema/i.test(t)) return 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80';
+  if (/taco|fajita|burrito|quesadilla/i.test(t)) return 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&fit=crop&w=800&q=80';
+  if (/ensalada/i.test(t)) return 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80';
+  if (/pan|tostada|sandwich/i.test(t)) return 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80';
+  if (/postre|dulce|pastel|panqueque/i.test(t)) return 'https://images.unsplash.com/photo-1506084868230-bb9d95c24759?auto=format&fit=crop&w=800&q=80';
+  return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80';
+}
+
+// 2. Recipe Planner & "Tengo 3 ingredientes" or "Nombre de Receta" Generator
 app.post('/api/recipe/generate', async (req, res) => {
   try {
-    const { ingredients, userProfile, targetMeal, cuisine, budgetFocus } = req.body;
+    const { ingredients, recipeName, userProfile, targetMeal, cuisine, budgetFocus } = req.body;
     const ai = getAi();
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
+      const fallbackTitle = recipeName || 'Revuelto Rápido de Emergencia para Principiantes';
+      const fallbackImg = getAppetizingFoodImageUrl(fallbackTitle);
       return res.json({
-        title: 'Revuelto Rápido de Emergencia para Principiantes',
-        description: 'Plato fácil con ingredientes sencillos, ideal para dominar el control del fuego y no quemar nada.',
-        servings: 1,
-        totalTimeMinutes: 12,
+        title: fallbackTitle,
+        description: recipeName ? `Aprende a preparar ${recipeName} paso a paso con técnicas sencillas para no quemar nada.` : 'Plato fácil con ingredientes sencillos, ideal para dominar el control del fuego y no quemar nada.',
+        servings: 2,
+        totalTimeMinutes: 15,
         difficulty: 'Principiante Absoluto',
         cuisine: cuisine || 'economica_bbb',
-        cuisineName: 'Cocina Básica & Económica',
+        cuisineName: 'Cocina Fácil & Segura',
         countryFlag: '🍳',
         isBudgetFriendly: true,
-        estimatedCostLabel: 'Económica (<$1.50 USD)',
-        culturalSecret: 'El calor residual termina de cocinar los huevos en el plato sin resecarlos.',
+        estimatedCostLabel: 'Económica (<$2.50 USD)',
+        culturalSecret: 'El calor residual termina de asentar los sabores y texturas en el plato sin quemar la preparación.',
+        imageUrl: fallbackImg,
+        finishGalleryUrls: [fallbackImg],
+        finishVisualCheckpoints: [
+          'Dorado suave y uniforme sin bordes negros ni humo.',
+          'Textura tierna y jugosa al clavar el tenedor.',
+          'Aroma apetitoso y fresco, listo para emplatar.',
+        ],
         pantrySubstitutes: [
           {
             original: 'Mantequilla fina',
@@ -1609,8 +1635,8 @@ app.post('/api/recipe/generate', async (req, res) => {
           'El fuego debe estar entre bajo y medio; si humea, está demasiado alto.',
         ],
         miseEnPlace: [
-          '2 huevos cascados en un plato hondo batidos ligeramente con tenedor',
-          '1 cucharadita de aceite o mantequilla lista junto a la sartén',
+          'Tener medidos los ingredientes en platitos separados antes de encender la estufa',
+          '1 cucharada de aceite o mantequilla lista junto a la sartén',
           'Una pizca de sal y pimienta a mano',
           'Plato vacío donde servirás listo a un lado',
         ],
@@ -1618,8 +1644,8 @@ app.post('/api/recipe/generate', async (req, res) => {
         steps: [
           {
             stepNumber: 1,
-            title: 'Mise en Place completa',
-            instruction: 'Asegúrate de tener todos los ingredientes en platitos antes de encender la estufa.',
+            title: 'Mise en Place completa (Fuego apagado)',
+            instruction: 'Asegúrate de tener todos los ingredientes medidos y picados en platitos antes de encender la estufa.',
             tip: 'Si picas mientras cocinas, las cosas en la sartén se quemarán mientras estás distraído.',
             heatLevel: 'apagado',
             timerSeconds: 0,
@@ -1627,21 +1653,30 @@ app.post('/api/recipe/generate', async (req, res) => {
           },
           {
             stepNumber: 2,
-            title: 'Calentar la sartén suavemente',
-            instruction: 'Coloca la sartén a Fuego Bajo. Agrega el aceite o mantequilla y espera a que brille sin humear.',
+            title: 'Calentar la base suavemente',
+            instruction: 'Coloca la sartén a Fuego Bajo. Agrega el aceite y espera 60 segundos a que brille sin humear.',
             tip: 'Pon la mano a 10 cm arriba de la sartén; si sientes tibio suave, está lista.',
             heatLevel: 'bajo',
-            timerSeconds: 90,
+            timerSeconds: 60,
             timerLabel: 'Calentar sartén',
           },
           {
             stepNumber: 3,
-            title: 'Cocción suave de los huevos',
-            instruction: 'Vierte los huevos. Con la espátula de madera o silicona, empuja los bordes suavemente hacia el centro.',
-            tip: 'Apaga el fuego cuando los huevos aún se vean un poquito húmedos; se terminarán de cocinar con el calor residual.',
-            heatLevel: 'bajo',
-            timerSeconds: 120,
-            timerLabel: 'Huevos revueltos',
+            title: 'Cocción guiada a fuego controlado',
+            instruction: 'Agrega los ingredientes principales. Remueve suavemente con cuchara de madera sin dejar que se peguen.',
+            tip: 'Escucha el sonido: debe ser un chisporroteo suave y constante.',
+            heatLevel: 'medio',
+            timerSeconds: 300,
+            timerLabel: 'Cocción suave',
+          },
+          {
+            stepNumber: 4,
+            title: 'Punto final y emplatado',
+            instruction: 'Apaga el fuego, retira la sartén de la hornalla caliente y sirve directamente en tu plato.',
+            tip: 'Deja reposar 1 minuto para que no queme al dar el primer bocado.',
+            heatLevel: 'apagado',
+            timerSeconds: 60,
+            timerLabel: 'Reposo',
           },
         ],
       });
@@ -1682,7 +1717,24 @@ app.post('/api/recipe/generate', async (req, res) => {
 - Desafíos culinarios: desglasado de sartenes con líquido, reducciones sedosas, y equilibrio sensorial de los 5 sabores.`;
     }
 
-    const prompt = `Crea una receta adaptada al NIVEL CULINARIO del usuario con estos ingredientes: "${ingredients || 'huevos, cebolla, pan'}".
+    const prompt = recipeName
+      ? `El usuario quiere aprender a cocinar exactamente este plato: "${recipeName}".
+Crea una receta pedagógica, a prueba de principiantes y adaptada al NIVEL CULINARIO del usuario.
+Perfil del aprendiz:
+- Nivel Culinario Actual: Nivel ${userLevel} (${userProfile?.levelTitle || 'Cero Absoluto'})
+${levelPedagogicalRule}
+- Errores pasados que comete: ${userProfile?.pastMistakes?.join(', ') || 'Ninguno registrado'}
+Comida objetivo: "${recipeName}".
+Estilo Culinario: ${requestedCuisineNote}
+${budgetFocus ? 'ENFOQUE ECONÓMICO ACTIVO: Diseña el plato para que sea ultra accesible (BBB) y rinda bien.' : ''}
+
+REGLAS CRÍTICAS PARA CHEF CERO:
+1. DETALLA LA LISTA COMPLETA DE INGREDIENTES Y MISE EN PLACE con cantidades claras y medidas caseras (tazas, cucharadas, unidades).
+2. PASO A PASO DETALLADO: Con nivel de fuego explícito ('bajo', 'medio', 'alto', 'apagado'), temporizadores precisos en segundos y pistas sensoriales (vista, oído, olor).
+3. "culturalSecret": El truco de oro culinario para que este plato quede delicioso sin quemar nada.
+4. "finishVisualCheckpoints": Lista de 3 pistas visuales claras de cómo debe verse el plato final terminado.
+5. Alertas de seguridad hiper-específicas para principiantes.`
+      : `Crea una receta adaptada al NIVEL CULINARIO del usuario con estos ingredientes: "${ingredients || 'huevos, cebolla, pan'}".
 Perfil del aprendiz:
 - Nivel Culinario Actual: Nivel ${userLevel} (${userProfile?.levelTitle || 'Cero Absoluto'})
 ${levelPedagogicalRule}
@@ -1708,7 +1760,8 @@ REGLAS CRÍTICAS PARA CHEF CERO (FILOSOFÍA PANTRY-FIRST Y VOZ):
 6. "pantrySubstitutes": Lista de 1 a 3 sustitutos baratos de alacena para no gastar de más.
 7. "requiredLevel": El nivel culinario que amerita esta preparación (1 a 5).
 8. "learningGoal": Una frase corta indicando qué técnica clave desbloquea o practica el usuario al hacer este plato.
-9. Alertas de seguridad hiper-específicas para principiantes.`;
+9. "finishVisualCheckpoints": Lista de 3 pistas visuales claras de cómo debe verse el plato final terminado.
+10. Alertas de seguridad hiper-específicas para principiantes.`;
 
     const response = await callGeminiWithFallback(ai, {
       contents: prompt,
@@ -1730,6 +1783,10 @@ REGLAS CRÍTICAS PARA CHEF CERO (FILOSOFÍA PANTRY-FIRST Y VOZ):
             isBudgetFriendly: { type: Type.BOOLEAN },
             estimatedCostLabel: { type: Type.STRING },
             culturalSecret: { type: Type.STRING },
+            finishVisualCheckpoints: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
             pantrySubstitutes: {
               type: Type.ARRAY,
               items: {
@@ -1786,44 +1843,57 @@ REGLAS CRÍTICAS PARA CHEF CERO (FILOSOFÍA PANTRY-FIRST Y VOZ):
     if (!parsed || !parsed.title || !parsed.steps) {
       throw new Error('Gemini recipe invalid structure');
     }
+    const finalImg = getAppetizingFoodImageUrl(parsed.title, parsed.description);
+    parsed.imageUrl = parsed.imageUrl || finalImg;
+    parsed.finishGalleryUrls = parsed.finishGalleryUrls && parsed.finishGalleryUrls.length > 0 ? parsed.finishGalleryUrls : [finalImg];
+    if (!parsed.finishVisualCheckpoints || parsed.finishVisualCheckpoints.length === 0) {
+      parsed.finishVisualCheckpoints = [
+        'Dorado suave y uniforme sin bordes quemados.',
+        'Textura tierna y jugosa al tacto y corte.',
+        'Aroma limpio y fresco, listo para servir en el plato.',
+      ];
+    }
     return res.json(parsed);
   } catch (error: any) {
     console.warn('Gemini recipe fallback engaged:', error?.message);
+    const reqRecipeName = req.body?.recipeName;
     const ingr = req.body?.ingredients || 'tus ingredientes';
     const cuisine = req.body?.cuisine || 'economica_bbb';
 
-    let title = `Salteado Express con ${ingr.slice(0, 25)}`;
+    let title = reqRecipeName || `Salteado Express con ${ingr.slice(0, 25)}`;
     let flag = '🍳';
     let cName = 'Cocina Fácil';
     let secret = 'El control de fuego suave evita que los ingredientes se arrebaten antes de cocinarse.';
 
     if (cuisine === 'chilena_criolla') {
-      title = `Salteado Criollo con ${ingr.slice(0, 22)}`;
+      title = reqRecipeName || `Salteado Criollo con ${ingr.slice(0, 22)}`;
       flag = '🇨🇱';
       cName = 'Chilena & Criolla';
       secret = 'Suda la cebolla lentamente para que quede dulce y no cause ardor estomacal.';
     } else if (cuisine === 'mexicana') {
-      title = `Sartén Ranchero con ${ingr.slice(0, 22)}`;
+      title = reqRecipeName || `Sartén Ranchero con ${ingr.slice(0, 22)}`;
       flag = '🇲🇽';
       cName = 'Mexicana Rápida';
       secret = 'Dora las tortillas con un velo ligero de aceite; no hace falta freírlas en hondo para que queden crocantes.';
     } else if (cuisine === 'asiatica') {
-      title = `Salteado Estilo Oriental con ${ingr.slice(0, 20)}`;
+      title = reqRecipeName || `Salteado Estilo Oriental con ${ingr.slice(0, 20)}`;
       flag = '🥢';
       cName = 'Asiática de Barrio';
       secret = 'Agrega el ajo y la salsa de soya al final para que no se quemen ni amarguen.';
     } else if (cuisine === 'italiana') {
-      title = `Pasta o Salteado Pomodoro con ${ingr.slice(0, 20)}`;
+      title = reqRecipeName || `Pasta o Salteado Pomodoro con ${ingr.slice(0, 20)}`;
       flag = '🇮🇹';
       cName = 'Italiana de la Nonna';
       secret = 'Reserva un chorrito de agua caliente con almidón para lograr una salsa brillante y cremosa.';
     }
 
+    const fallbackImg = getAppetizingFoodImageUrl(title);
+
     return res.json({
       title,
-      description: 'Una preparación reconfortante y accesible diseñada para principiantes, asegurando que nada se pegue ni se queme.',
-      servings: 1,
-      totalTimeMinutes: 14,
+      description: reqRecipeName ? `Aprende a preparar ${reqRecipeName} paso a paso con técnicas sencillas para no quemar nada.` : 'Una preparación reconfortante y accesible diseñada para principiantes, asegurando que nada se pegue ni se queme.',
+      servings: 2,
+      totalTimeMinutes: 15,
       difficulty: 'Principiante',
       cuisine,
       cuisineName: cName,
@@ -1831,6 +1901,13 @@ REGLAS CRÍTICAS PARA CHEF CERO (FILOSOFÍA PANTRY-FIRST Y VOZ):
       isBudgetFriendly: true,
       estimatedCostLabel: 'Económica (~$2 - $3.50 USD)',
       culturalSecret: secret,
+      imageUrl: fallbackImg,
+      finishGalleryUrls: [fallbackImg],
+      finishVisualCheckpoints: [
+        'Dorado suave y uniforme sin bordes quemados.',
+        'Textura tierna y jugosa al tacto y corte.',
+        'Aroma limpio y fresco, listo para servir en el plato.',
+      ],
       pantrySubstitutes: [
         {
           original: 'Condimentos o salsas importadas',
@@ -1844,7 +1921,7 @@ REGLAS CRÍTICAS PARA CHEF CERO (FILOSOFÍA PANTRY-FIRST Y VOZ):
         'Si algo salpica, apaga el fuego inmediatamente.',
       ],
       miseEnPlace: [
-        `Tener medidos y limpios: ${ingr}`,
+        reqRecipeName ? `Ingredientes principales para ${reqRecipeName} medidos en pocillos` : `Tener medidos y limpios: ${ingr}`,
         '1 cucharadita de aceite de oliva o girasol',
         '1 pizca de sal en los dedos',
         '1 espátula de madera o silicona',
@@ -1854,7 +1931,7 @@ REGLAS CRÍTICAS PARA CHEF CERO (FILOSOFÍA PANTRY-FIRST Y VOZ):
         {
           stepNumber: 1,
           title: 'Alistar y picar con tranquilidad',
-          instruction: `Coloca tus ingredientes (${ingr}) picados en platos separados. No enciendas la hornalla todavía.`,
+          instruction: `Coloca tus ingredientes picados en platos separados. No enciendas la hornalla todavía.`,
           tip: 'El secreto de los cocineros profesionales es no empezar a calentar hasta tener todo picado.',
           heatLevel: 'apagado',
           timerSeconds: 0,
@@ -1889,6 +1966,58 @@ REGLAS CRÍTICAS PARA CHEF CERO (FILOSOFÍA PANTRY-FIRST Y VOZ):
         },
       ],
     });
+  }
+});
+
+// Endpoint para generar o consultar la imagen sugerida del plato terminado
+app.post('/api/recipe/generate-dish-image', async (req, res) => {
+  try {
+    const { dishTitle, description } = req.body;
+    const ai = getAi();
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    // 1. Detección de imágenes de alta fidelidad generadas con la herramienta
+    const titleLower = (dishTitle || '').toLowerCase();
+    if (titleLower.includes('tortilla') || titleLower.includes('patata')) {
+      return res.json({ imageUrl: '/src/assets/images/tortilla_espanola_terminada_1790559726137.jpg' });
+    }
+    if (titleLower.includes('arroz')) {
+      return res.json({ imageUrl: '/src/assets/images/arroz_blanco_terminado_1790559743226.jpg' });
+    }
+    if (titleLower.includes('huevo') || titleLower.includes('revuelto')) {
+      return res.json({ imageUrl: '/src/assets/images/huevos_revueltos_terminados_1790559759573.jpg' });
+    }
+    if (titleLower.includes('pasta') || titleLower.includes('fideo') || titleLower.includes('pomodoro') || titleLower.includes('espagueti')) {
+      return res.json({ imageUrl: '/src/assets/images/pasta_pomodoro_terminada_1790559770491.jpg' });
+    }
+
+    // 2. Generación en tiempo real con Gemini si hay API key
+    if (apiKey) {
+      try {
+        const imagePrompt = `Fotografía gastronómica profesional de alta cocina, plato terminado y emplatado de "${dishTitle}". ${description || 'Plato casero perfectamente cocinado, iluminación suave de estudio, presentado en plato elegante con detalles de hierbas frescas, apetitoso y listo para comer.'}`;
+        const imageResponse = await ai.models.generateContent({
+          model: 'gemini-3.1-flash-lite-image',
+          contents: imagePrompt,
+        });
+
+        for (const candidate of (imageResponse as any).candidates || []) {
+          for (const part of candidate.content?.parts || []) {
+            if (part.inlineData?.data) {
+              const mime = part.inlineData.mimeType || 'image/jpeg';
+              return res.json({ imageUrl: `data:${mime};base64,${part.inlineData.data}` });
+            }
+          }
+        }
+      } catch (genErr) {
+        console.warn('Chef Cero: Aviso generando imagen con modelo IA:', genErr);
+      }
+    }
+
+    // 3. Fallback fotográfico apetitoso
+    const fallbackUrl = getAppetizingFoodImageUrl(dishTitle || 'Plato terminado', description);
+    return res.json({ imageUrl: fallbackUrl });
+  } catch (error: any) {
+    return res.json({ imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80' });
   }
 });
 

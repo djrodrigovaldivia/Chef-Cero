@@ -17,7 +17,6 @@ import {
   Zap,
   Coins,
 } from 'lucide-react';
-import { TokenBudgetMonitor } from './TokenBudgetMonitor';
 
 interface ChefNotebookProps {
   userProfile: UserProfile;
@@ -624,11 +623,6 @@ export const ChefNotebook: React.FC<ChefNotebookProps> = ({
             </div>
           )}
 
-          {/* Sección de Transparencia de Recursos y Presupuesto Live */}
-          <TokenBudgetMonitor
-            compact={false}
-            showTips={true}
-          />
 
           {/* Badges card */}
           <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm space-y-3">

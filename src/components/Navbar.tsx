@@ -1,32 +1,52 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChefHat, Mic, BookOpen, MapPin, Award, Flame, Bell, BellRing, Check, VolumeX, Volume2, Recycle, ShoppingCart, MoreHorizontal, Sparkles, ChevronDown, Camera, GraduationCap, Coins } from 'lucide-react';
+import {
+  ChefHat,
+  Mic,
+  Camera,
+  Award,
+  ShoppingCart,
+  Calendar,
+  VolumeX,
+  Volume2,
+  Bell,
+  BellRing,
+  Check,
+  MoreHorizontal,
+  ChevronDown,
+  Sparkles,
+  Play,
+  Flame,
+  AlertTriangle
+} from 'lucide-react';
 import { UserProfile } from '../types';
 import { getNotificationPermission, requestNotificationPermission, sendTestPushNotification } from '../utils/pushNotifications';
 import { useSilentMode } from '../utils/useSilentMode';
 
-export type ActiveTab = 'cocinar' | 'autor' | 'sobras' | 'diccionario' | 'mapa' | 'cuaderno';
+export type ActiveTab = 'cocinar' | 'escaner' | 'escuela';
 
 interface NavbarProps {
-  appMode: 'simple' | 'complete';
-  onToggleAppMode: (mode: 'simple' | 'complete') => void;
+  appMode?: 'simple' | 'complete';
+  onToggleAppMode?: (mode: 'simple' | 'complete') => void;
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
   onOpenVoiceAssistant: () => void;
   onOpenShoppingList?: () => void;
   onOpenFridgeScanner?: (mode?: 'level_trio' | 'inspect_product' | 'fridge') => void;
   onOpenTechniques?: () => void;
+  onOpenMealPlanner?: () => void;
+  onOpenVisualLoops?: () => void;
+  onOpenEmergency?: () => void;
   userProfile: UserProfile;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
-  appMode,
-  onToggleAppMode,
   activeTab,
   onSelectTab,
   onOpenVoiceAssistant,
   onOpenShoppingList,
-  onOpenFridgeScanner,
-  onOpenTechniques,
+  onOpenMealPlanner,
+  onOpenVisualLoops,
+  onOpenEmergency,
   userProfile,
 }) => {
   const [navPushStatus, setNavPushStatus] = useState<string>('default');
@@ -39,7 +59,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     setNavPushStatus(getNotificationPermission());
   }, []);
 
-  // Cerrar menú desplegable al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -64,261 +83,220 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
-  const handleToolItemClick = (tab: ActiveTab) => {
-    onSelectTab(tab);
-    onToggleAppMode('complete');
-    setIsToolsMenuOpen(false);
-  };
-
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-18 gap-3">
-          {/* Logo & Marca Desestresante */}
-          <div
-            onClick={() => {
-              onToggleAppMode('simple');
-              onSelectTab('cocinar');
-            }}
-            className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0"
-          >
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-amber-500 flex items-center justify-center text-stone-950 shadow-sm group-hover:scale-105 transition-transform">
-              <ChefHat className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-black text-base sm:text-lg text-stone-900 tracking-tight font-serif">
-                  Chef Cero
-                </span>
-                <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full border border-amber-200">
-                  IA
-                </span>
+    <>
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16 sm:h-18 gap-3">
+            {/* 1. Logo & Identidad de Marca */}
+            <div
+              onClick={() => onSelectTab('cocinar')}
+              className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0"
+            >
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-amber-500 flex items-center justify-center text-stone-950 shadow-sm group-hover:scale-105 transition-transform">
+                <ChefHat className="w-5 h-5" />
               </div>
-              <p className="text-[10px] text-stone-500 hidden sm:block">
-                Cocina fácil para principiantes
-              </p>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black text-base sm:text-lg text-stone-900 tracking-tight font-serif">
+                    Chef Cero
+                  </span>
+                  <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full border border-amber-200">
+                    IA
+                  </span>
+                </div>
+                <p className="text-[10px] text-stone-500 hidden sm:block">
+                  Aprende a cocinar sin miedo
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Selector de Modo: Simple (Zen) vs Completo (Explorar) */}
-          <div className="flex items-center bg-stone-100 p-1 rounded-2xl border border-stone-200/80 shadow-2xs">
-            <button
-              onClick={() => {
-                onToggleAppMode('simple');
-                onSelectTab('cocinar');
-              }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                appMode === 'simple'
-                  ? 'bg-white text-stone-900 shadow-xs'
-                  : 'text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              <span>🧘</span>
-              <span>Modo Sencillo</span>
-            </button>
-
-            <button
-              onClick={() => onToggleAppMode('complete')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                appMode === 'complete'
-                  ? 'bg-white text-stone-900 shadow-xs'
-                  : 'text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5 text-orange-500" />
-              <span className="hidden sm:inline">Modo Completo</span>
-              <span className="sm:hidden">Completo</span>
-            </button>
-          </div>
-
-          {/* Acciones Principales: Hablar con el Chef + Menú de Herramientas Ordenado */}
-          <div className="flex items-center gap-2" ref={menuRef}>
-            {/* Botón Principal: Hablar con el Chef (Destacado y Cálido) */}
-            <button
-              onClick={onOpenVoiceAssistant}
-              className="relative px-3.5 sm:px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-stone-950 font-bold text-xs sm:text-sm rounded-xl flex items-center gap-1.5 shadow-sm hover:shadow-md transition-all ring-2 ring-amber-300/50 cursor-pointer"
-            >
-              <Mic className="w-4 h-4 text-stone-950 animate-pulse" />
-              <span className="hidden sm:inline">Hablar con el Chef</span>
-              <span className="sm:hidden font-extrabold">Chef</span>
-            </button>
-
-            {/* Menú Desplegable "Más Herramientas" (Guarda todo sin saturar la vista) */}
-            <div className="relative">
+            {/* 2. Selector Maestro de 3 Pestañas Principales (Desktop / Tablet) */}
+            <nav className="hidden md:flex items-center gap-1 bg-stone-100 p-1 rounded-2xl border border-stone-200">
               <button
-                onClick={() => setIsToolsMenuOpen(!isToolsMenuOpen)}
-                className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
-                  isToolsMenuOpen
-                    ? 'bg-stone-200 border-stone-300 text-stone-900'
-                    : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+                type="button"
+                onClick={() => onSelectTab('cocinar')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === 'cocinar'
+                    ? 'bg-white text-stone-950 shadow-xs font-black'
+                    : 'text-stone-600 hover:text-stone-950 hover:bg-stone-200/60'
                 }`}
-                title="Más herramientas y ajustes"
               >
-                <MoreHorizontal className="w-4 h-4" />
-                <ChevronDown className="w-3 h-3 opacity-60 hidden sm:block" />
+                <span>🍳</span>
+                <span>Cocinar</span>
               </button>
 
-              {/* Panel Flotante del Menú */}
-              {isToolsMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stone-200 shadow-xl p-2 z-50 animate-fade-in text-xs space-y-1">
-                  <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
-                    Herramientas de cocina
-                  </div>
+              <button
+                type="button"
+                onClick={() => onSelectTab('escaner')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === 'escaner'
+                    ? 'bg-white text-stone-950 shadow-xs font-black'
+                    : 'text-stone-600 hover:text-stone-950 hover:bg-stone-200/60'
+                }`}
+              >
+                <Camera className="w-4 h-4 text-emerald-600" />
+                <span>Inspector de Alimentos</span>
+                <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
+                  Foto
+                </span>
+              </button>
 
-                  {onOpenFridgeScanner && (
-                    <>
-                      <button
-                        onClick={() => {
-                          onOpenFridgeScanner('level_trio');
-                          setIsToolsMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-50 text-stone-700 hover:text-amber-950 flex items-center justify-between transition cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2 font-medium">
-                          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                          <span>3 Recetas por Foto (Niveles)</span>
-                        </span>
-                        <span className="text-[9px] bg-amber-500 text-stone-950 font-black px-1.5 py-0.2 rounded-full shadow-2xs">
-                          3 Niveles
-                        </span>
-                      </button>
+              <button
+                type="button"
+                onClick={() => onSelectTab('escuela')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === 'escuela'
+                    ? 'bg-white text-stone-950 shadow-xs font-black'
+                    : 'text-stone-600 hover:text-stone-950 hover:bg-stone-200/60'
+                }`}
+              >
+                <Award className="w-4 h-4 text-purple-600" />
+                <span>Escuela & Cuaderno</span>
+                <span className="text-[9px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full font-mono">
+                  {userProfile.xp} XP
+                </span>
+              </button>
+            </nav>
 
-                      <button
-                        onClick={() => {
-                          onOpenFridgeScanner('fridge');
-                          setIsToolsMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-50 text-stone-700 hover:text-amber-950 flex items-center justify-between transition cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2 font-medium">
-                          <Camera className="w-3.5 h-3.5 text-amber-600" />
-                          <span>Escanear Nevera con Cámara</span>
-                        </span>
-                        <span className="text-[9px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full">
-                          IA
-                        </span>
-                      </button>
-                    </>
-                  )}
+            {/* 3. Acciones Rápidas Directas */}
+            <div className="flex items-center gap-1.5 sm:gap-2" ref={menuRef}>
+              {/* Botón S.O.S. de Emergencias en Sartén */}
+              {onOpenEmergency && (
+                <button
+                  type="button"
+                  onClick={onOpenEmergency}
+                  className="px-2.5 sm:px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 text-xs font-black flex items-center gap-1.5 transition cursor-pointer"
+                  title="Auxilio rápido si se te quema o pega la comida"
+                >
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  <span className="hidden sm:inline">S.O.S.</span>
+                </button>
+              )}
 
-                  {onOpenTechniques && (
-                    <button
-                      onClick={() => {
-                        onOpenTechniques();
-                        setIsToolsMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center gap-2 font-medium transition cursor-pointer"
-                    >
-                      <GraduationCap className="w-3.5 h-3.5 text-stone-600" />
-                      <span>Guía Sensorial (Puntos exactos)</span>
-                    </button>
-                  )}
+              {/* Botón Lista de Compras */}
+              {onOpenShoppingList && (
+                <button
+                  type="button"
+                  onClick={onOpenShoppingList}
+                  className="px-2.5 sm:px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  title="Ver lista de compras del supermercado"
+                >
+                  <ShoppingCart className="w-4 h-4 text-emerald-600" />
+                  <span className="hidden lg:inline">Compras</span>
+                </button>
+              )}
 
-                  {onOpenShoppingList && (
-                    <button
-                      onClick={() => {
-                        onOpenShoppingList();
-                        setIsToolsMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <ShoppingCart className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Lista de Supermercado</span>
-                      </span>
-                    </button>
-                  )}
+              {/* Botón Principal: Hablar con el Chef (Destacado y Cálido) */}
+              <button
+                type="button"
+                onClick={onOpenVoiceAssistant}
+                className="relative px-3 sm:px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-stone-950 font-black text-xs sm:text-sm rounded-xl flex items-center gap-1.5 shadow-sm hover:shadow-md transition-all ring-2 ring-amber-300/50 cursor-pointer"
+              >
+                <Mic className="w-4 h-4 text-stone-950 animate-pulse" />
+                <span className="hidden sm:inline">Hablar con el Chef</span>
+                <span className="sm:hidden font-extrabold">Chef</span>
+              </button>
 
-                  <button
-                    onClick={() => handleToolItemClick('sobras')}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <Recycle className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Rescate de Sobras</span>
-                    </span>
-                    <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
-                      Zero Waste
-                    </span>
-                  </button>
+              {/* Menú Desplegable "Más Herramientas" */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsToolsMenuOpen(!isToolsMenuOpen)}
+                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                    isToolsMenuOpen
+                      ? 'bg-stone-200 border-stone-300 text-stone-900'
+                      : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+                  }`}
+                  title="Más herramientas y ajustes"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                  <ChevronDown className="w-3 h-3 opacity-60 hidden sm:block" />
+                </button>
 
-                  <button
-                    onClick={() => handleToolItemClick('diccionario')}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center gap-2 font-medium transition cursor-pointer"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Diccionario Visual de Cocina</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleToolItemClick('mapa')}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center gap-2 font-medium transition cursor-pointer"
-                  >
-                    <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                    <span>¿Dónde va Guardado?</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleToolItemClick('cuaderno')}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <Award className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Mi Cuaderno de Aprendiz</span>
-                    </span>
-                    <span className="text-[10px] bg-amber-100 text-amber-900 font-mono font-bold px-1.5 py-0.2 rounded-full">
-                      {userProfile.xp} XP
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => handleToolItemClick('cuaderno')}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <Coins className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Presupuesto Live & Tokens</span>
-                    </span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
-                      Control
-                    </span>
-                  </button>
-
-                  <div className="pt-2 border-t border-stone-100 space-y-1">
-                    <div className="px-3 py-1 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
-                      Preferencias de voz y avisos
+                {/* Panel Flotante del Menú */}
+                {isToolsMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stone-200 shadow-xl p-2 z-50 animate-fade-in text-xs space-y-1">
+                    <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+                      Herramientas de cocina
                     </div>
 
-                    {/* Switch Modo Silencioso */}
-                    <button
-                      onClick={toggleSilentMode}
-                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        {isSilent ? <VolumeX className="w-3.5 h-3.5 text-amber-600" /> : <Volume2 className="w-3.5 h-3.5 text-stone-500" />}
-                        <span>Modo Silencioso (Subtítulos)</span>
-                      </span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isSilent ? 'bg-amber-100 text-amber-900' : 'bg-stone-100 text-stone-500'}`}>
-                        {isSilent ? 'ON' : 'OFF'}
-                      </span>
-                    </button>
+                    {onOpenMealPlanner && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenMealPlanner();
+                          setIsToolsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Planificador Semanal</span>
+                        </span>
+                        <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full">
+                          Lunes-Domingo
+                        </span>
+                      </button>
+                    )}
 
-                    {/* Push Alerts */}
-                    <button
-                      onClick={handleNavPushClick}
-                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        {navPushStatus === 'granted' ? <BellRing className="w-3.5 h-3.5 text-emerald-600" /> : <Bell className="w-3.5 h-3.5 text-amber-600" />}
-                        <span>Notificaciones de Alerta</span>
-                      </span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${navPushStatus === 'granted' ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-500'}`}>
-                        {navPushStatus === 'granted' ? 'Activo' : 'Activar'}
-                      </span>
-                    </button>
+                    {onOpenVisualLoops && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenVisualLoops();
+                          setIsToolsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          <Play className="w-3.5 h-3.5 text-rose-600 fill-rose-600" />
+                          <span>Técnicas en Bucle</span>
+                        </span>
+                        <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.2 rounded-full">
+                          4 seg
+                        </span>
+                      </button>
+                    )}
+
+                    <div className="pt-2 border-t border-stone-100 space-y-1">
+                      <div className="px-3 py-1 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+                        Preferencias
+                      </div>
+
+                      {/* Switch Modo Silencioso */}
+                      <button
+                        type="button"
+                        onClick={toggleSilentMode}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          {isSilent ? <VolumeX className="w-3.5 h-3.5 text-amber-600" /> : <Volume2 className="w-3.5 h-3.5 text-stone-500" />}
+                          <span>Modo Silencioso (Subtítulos)</span>
+                        </span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isSilent ? 'bg-amber-100 text-amber-900' : 'bg-stone-100 text-stone-500'}`}>
+                          {isSilent ? 'ON' : 'OFF'}
+                        </span>
+                      </button>
+
+                      {/* Push Alerts */}
+                      <button
+                        type="button"
+                        onClick={handleNavPushClick}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-stone-50 text-stone-700 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          {navPushStatus === 'granted' ? <BellRing className="w-3.5 h-3.5 text-emerald-600" /> : <Bell className="w-3.5 h-3.5 text-amber-600" />}
+                          <span>Notificaciones Push</span>
+                        </span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${navPushStatus === 'granted' ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-500'}`}>
+                          {navPushStatus === 'granted' ? 'Activo' : 'Activar'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -329,74 +307,54 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>{navToast}</span>
           </div>
         )}
+      </header>
 
-        {/* Pestañas secundarias en modo Completo (solo se muestran cuando el usuario elige el modo completo) */}
-        {appMode === 'complete' && (
-          <div className="flex items-center gap-2 py-2 border-t border-stone-100 overflow-x-auto text-xs scrollbar-none">
-            <button
-              onClick={() => onSelectTab('cocinar')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'cocinar' ? 'bg-amber-100 text-amber-950 font-black' : 'text-stone-600 hover:text-stone-900'
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5 text-orange-500" />
-              <span>Catálogo de Recetas</span>
-            </button>
+      {/* 4. BARRA DE NAVEGACIÓN INFERIOR FIJA PARA MÓVILES (Estilo iOS / Android Nativo) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-3 py-2 flex items-center justify-around shadow-lg">
+        <button
+          type="button"
+          onClick={() => onSelectTab('cocinar')}
+          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition cursor-pointer ${
+            activeTab === 'cocinar' ? 'text-amber-600 font-black' : 'text-stone-500 hover:text-stone-900 font-medium'
+          }`}
+        >
+          <span className="text-lg leading-none">🍳</span>
+          <span className="text-[10px]">Cocinar</span>
+        </button>
 
-            <button
-              onClick={() => onSelectTab('autor')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'autor'
-                  ? 'bg-gradient-to-r from-purple-800 to-amber-700 text-white shadow-xs font-black'
-                  : 'text-purple-900 bg-purple-50/70 hover:bg-purple-100 border border-purple-200'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Recetas de Autor (IA)</span>
-            </button>
+        <button
+          type="button"
+          onClick={() => onSelectTab('escaner')}
+          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition cursor-pointer ${
+            activeTab === 'escaner' ? 'text-emerald-600 font-black' : 'text-stone-500 hover:text-stone-900 font-medium'
+          }`}
+        >
+          <Camera className="w-5 h-5 text-emerald-600" />
+          <span className="text-[10px]">Inspector</span>
+        </button>
 
-            <button
-              onClick={() => onSelectTab('sobras')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'sobras' ? 'bg-emerald-100 text-emerald-950' : 'text-stone-600 hover:text-stone-900'
-              }`}
-            >
-              <Recycle className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Rescate de Sobras</span>
-            </button>
-
-            <button
-              onClick={() => onSelectTab('diccionario')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'diccionario' ? 'bg-amber-100 text-amber-950' : 'text-stone-600 hover:text-stone-900'
-              }`}
-            >
-              <BookOpen className="w-3.5 h-3.5 text-amber-600" />
-              <span>Diccionario Visual</span>
-            </button>
-
-            <button
-              onClick={() => onSelectTab('mapa')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'mapa' ? 'bg-blue-100 text-blue-950' : 'text-stone-600 hover:text-stone-900'
-              }`}
-            >
-              <MapPin className="w-3.5 h-3.5 text-blue-600" />
-              <span>Guardado</span>
-            </button>
-
-            <button
-              onClick={() => onSelectTab('cuaderno')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'cuaderno' ? 'bg-purple-100 text-purple-950' : 'text-stone-600 hover:text-stone-900'
-              }`}
-            >
-              <Award className="w-3.5 h-3.5 text-purple-600" />
-              <span>Mi Cuaderno ({userProfile.xp} XP)</span>
-            </button>
+        <button
+          type="button"
+          onClick={onOpenVoiceAssistant}
+          className="flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-stone-900 transition cursor-pointer group"
+        >
+          <div className="w-8 h-8 rounded-full bg-amber-500 text-stone-950 flex items-center justify-center shadow-xs -mt-3 ring-2 ring-white">
+            <Mic className="w-4 h-4" />
           </div>
-        )}
-      </div>
-    </header>
+          <span className="text-[10px] font-bold">Chef</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onSelectTab('escuela')}
+          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition cursor-pointer ${
+            activeTab === 'escuela' ? 'text-purple-600 font-black' : 'text-stone-500 hover:text-stone-900 font-medium'
+          }`}
+        >
+          <Award className="w-5 h-5 text-purple-600" />
+          <span className="text-[10px]">Cuaderno</span>
+        </button>
+      </nav>
+    </>
   );
 };

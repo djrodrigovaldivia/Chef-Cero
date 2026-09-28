@@ -5,17 +5,17 @@ import { CookingMode } from './components/CookingMode';
 import { SimpleModeView } from './components/SimpleModeView';
 import { FridgeScannerModal, ScannerMode } from './components/FridgeScannerModal';
 import { TechniquesShowcaseModal } from './components/TechniquesShowcaseModal';
-import { VisualDictionary } from './components/VisualDictionary';
-import { KitchenStorageMap } from './components/KitchenStorageMap';
-import { ChefNotebook } from './components/ChefNotebook';
-import { LeftoversRescueTab } from './components/LeftoversRescueTab';
-import { SignatureDishesTab } from './components/SignatureDishesTab';
+import { FoodInspectorTab } from './components/FoodInspectorTab';
+import { SchoolAndNotebookTab } from './components/SchoolAndNotebookTab';
 import { ShoppingListModal } from './components/ShoppingListModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 import { FloatingVoiceBar } from './components/FloatingVoiceBar';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AccessibleSubtitles } from './components/AccessibleSubtitles';
+import { WeeklyMealPlannerModal } from './components/WeeklyMealPlannerModal';
+import { VisualTechniqueLoopModal } from './components/VisualTechniqueLoopModal';
 import { registerChefServiceWorker } from './utils/pushNotifications';
+import { STARTER_RECIPES } from './data/recipeData';
 import { Mic, ChefHat, Sparkles } from 'lucide-react';
 
 
@@ -120,6 +120,8 @@ export default function App() {
   const [isFridgeScannerOpen, setIsFridgeScannerOpen] = useState(false);
   const [scannerMode, setScannerMode] = useState<ScannerMode>('level_trio');
   const [isTechniquesOpen, setIsTechniquesOpen] = useState(false);
+  const [isMealPlannerOpen, setIsMealPlannerOpen] = useState(false);
+  const [isVisualLoopsOpen, setIsVisualLoopsOpen] = useState(false);
   const [voiceContext, setVoiceContext] = useState<{
     recipeTitle?: string;
     stepNumber?: number;
@@ -245,51 +247,46 @@ export default function App() {
           setIsFridgeScannerOpen(true);
         }}
         onOpenTechniques={() => setIsTechniquesOpen(true)}
+        onOpenMealPlanner={() => setIsMealPlannerOpen(true)}
+        onOpenVisualLoops={() => setIsVisualLoopsOpen(true)}
+        onOpenEmergency={() => {
+          setVoiceContext({
+            recipeTitle: 'Emergencia en sartén',
+            stepNumber: 1,
+            stepInstruction: 'Auxilio rápido: comida pegada, humo o fuego alto',
+            heatLevel: 'alto',
+          });
+          setIsVoiceOpen(true);
+        }}
         userProfile={userProfile}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {appMode === 'simple' && (
-          <SimpleModeView
-            userProfile={userProfile}
-            onSelectRecipe={(recipe) => {
-              setSelectedRecipeForCooking(recipe);
-              setAppMode('complete');
-              setActiveTab('cocinar');
-            }}
-            onOpenVoice={() => {
-              setVoiceContext(undefined);
-              setIsVoiceOpen(true);
-            }}
-            onOpenEmergency={() => {
-              setVoiceContext({
-                recipeTitle: 'Emergencia en sartén',
-                stepNumber: 1,
-                stepInstruction: 'Auxilio rápido: comida pegada, humo o fuego alto',
-                heatLevel: 'alto',
-              });
-              setIsVoiceOpen(true);
-            }}
-            onOpenLeftovers={() => {
-              setAppMode('complete');
-              setActiveTab('sobras');
-            }}
-            onSwitchToComplete={() => {
-              setAppMode('complete');
-              setActiveTab('cocinar');
-            }}
-            onOpenScanner={(mode = 'inspect_product') => {
-              setScannerMode(mode);
-              setIsFridgeScannerOpen(true);
-            }}
-            onOpenTechniques={() => setIsTechniquesOpen(true)}
-          />
-        )}
+      {/* Main Content Area: 3 Vistas Maestras Zen */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-28 md:pb-12">
+        {activeTab === 'cocinar' && (
+          selectedRecipeForCooking ? (
+            <div className="space-y-4">
+              {/* Barra superior de retorno a la lista de recetas */}
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setSelectedRecipeForCooking(null)}
+                  className="px-4 py-2.5 rounded-2xl bg-white hover:bg-stone-50 text-stone-900 text-xs sm:text-sm font-extrabold border border-stone-200 shadow-2xs flex items-center gap-2 transition cursor-pointer active:scale-98"
+                >
+                  <span className="text-base leading-none">←</span>
+                  <span>Volver a elegir receta</span>
+                </button>
 
-        {appMode === 'complete' && (
-          <>
-            {activeTab === 'cocinar' && (
+                <div className="text-right">
+                  <span className="text-xs text-stone-500 font-medium hidden sm:inline">
+                    Plato actual:
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-amber-900 ml-1.5 font-serif">
+                    {selectedRecipeForCooking.title.split('(')[0]}
+                  </span>
+                </div>
+              </div>
+
               <CookingMode
                 userProfile={userProfile}
                 onUpdateProfile={handleUpdateProfile}
@@ -299,36 +296,60 @@ export default function App() {
                 onLearnFact={handleLearnFact}
                 externalSelectedRecipe={selectedRecipeForCooking}
                 onRecipeConsumed={() => setSelectedRecipeForCooking(null)}
-                onNavigateToAutor={() => setActiveTab('autor')}
+                onNavigateToAutor={() => setActiveTab('escuela')}
               />
-            )}
+            </div>
+          ) : (
+            <SimpleModeView
+              userProfile={userProfile}
+              onSelectRecipe={(recipe) => {
+                setSelectedRecipeForCooking(recipe);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onOpenVoice={() => {
+                setVoiceContext(undefined);
+                setIsVoiceOpen(true);
+              }}
+              onOpenEmergency={() => {
+                setVoiceContext({
+                  recipeTitle: 'Emergencia en sartén',
+                  stepNumber: 1,
+                  stepInstruction: 'Auxilio rápido: comida pegada, humo o fuego alto',
+                  heatLevel: 'alto',
+                });
+                setIsVoiceOpen(true);
+              }}
+              onOpenScanner={() => setActiveTab('escaner')}
+              onOpenTechniques={() => setIsTechniquesOpen(true)}
+              onOpenMealPlanner={() => setIsMealPlannerOpen(true)}
+            />
+          )
+        )}
 
-            {activeTab === 'autor' && (
-              <SignatureDishesTab
-                userProfile={userProfile}
-                onCookRecipe={(recipe) => {
-                  setSelectedRecipeForCooking(recipe);
-                  setActiveTab('cocinar');
-                }}
-                onLearnFact={handleLearnFact}
-              />
-            )}
+        {/* 2. PESTAÑA ESTRELLA: INSPECTOR DE ALIMENTOS CON FOTO */}
+        {activeTab === 'escaner' && (
+          <FoodInspectorTab
+            onStartCookingRecipe={(recipe) => {
+              setSelectedRecipeForCooking(recipe);
+              setActiveTab('cocinar');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onOpenVoiceAssistant={() => {
+              setVoiceContext(undefined);
+              setIsVoiceOpen(true);
+            }}
+          />
+        )}
 
-            {activeTab === 'sobras' && <LeftoversRescueTab />}
-
-            {activeTab === 'diccionario' && <VisualDictionary />}
-
-            {activeTab === 'mapa' && <KitchenStorageMap />}
-
-            {activeTab === 'cuaderno' && (
-              <ChefNotebook
-                userProfile={userProfile}
-                onUpdateProfile={handleUpdateProfile}
-                onLearnFact={handleLearnFact}
-                onRemoveFact={handleRemoveFact}
-              />
-            )}
-          </>
+        {/* 3. PESTAÑA ESCUELA & CUADERNO DE APRENDIZ */}
+        {activeTab === 'escuela' && (
+          <SchoolAndNotebookTab
+            userProfile={userProfile}
+            onUpdateProfile={handleUpdateProfile}
+            onLearnFact={handleLearnFact}
+            onRemoveFact={handleRemoveFact}
+            onOpenVisualLoops={() => setIsVisualLoopsOpen(true)}
+          />
         )}
       </main>
 
@@ -375,6 +396,28 @@ export default function App() {
       <TechniquesShowcaseModal
         isOpen={isTechniquesOpen}
         onClose={() => setIsTechniquesOpen(false)}
+      />
+
+      {/* Planificador Semanal Inteligente (Lunes a Domingo + Consolidación al Súper) */}
+      <WeeklyMealPlannerModal
+        isOpen={isMealPlannerOpen}
+        onClose={() => setIsMealPlannerOpen(false)}
+        recipes={STARTER_RECIPES}
+        onOpenShoppingList={() => {
+          setIsMealPlannerOpen(false);
+          setIsShoppingListOpen(true);
+        }}
+        onSelectRecipeToCook={(recipe) => {
+          setSelectedRecipeForCooking(recipe);
+          setAppMode('complete');
+          setActiveTab('cocinar');
+        }}
+      />
+
+      {/* Demostraciones de Técnicas en Bucle (Micro-Pedagogía estilo Kitchen Stories) */}
+      <VisualTechniqueLoopModal
+        isOpen={isVisualLoopsOpen}
+        onClose={() => setIsVisualLoopsOpen(false)}
       />
 
       {/* Indicador de Estado Sin Conexión (Caché Offline activa) */}
