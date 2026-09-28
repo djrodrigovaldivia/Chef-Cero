@@ -22,11 +22,17 @@ body {
   padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
 }
 
-/* Ocultar o reubicar insignias inyectadas por plataformas de hosting como Netlify */
+/* Ocultar o neutralizar insignias inyectadas por plataformas de hosting como Netlify */
 #netlify-badge,
 [data-netlify-badge],
-.netlify-badge {
+.netlify-badge,
+div[style*="position: fixed"][style*="bottom: 0"][style*="right: 0"],
+div[style*="position:fixed"][style*="bottom:0"][style*="right:0"],
+iframe[src*="netlify"],
+a[href*="netlify.com"] {
   display: none !important;
   opacity: 0 !important;
   pointer-events: none !important;
+  visibility: hidden !important;
+  z-index: -9999 !important;
 }
