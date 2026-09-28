@@ -15,6 +15,7 @@ interface SimpleModeViewProps {
   onOpenScanner?: (mode?: 'inspect_product' | 'fridge') => void;
   onOpenTechniques?: () => void;
   onOpenMealPlanner?: () => void;
+  onOpenRecipeImport?: () => void;
 }
 
 interface CommonIngredient {
@@ -57,6 +58,7 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
   onOpenScanner,
   onOpenTechniques,
   onOpenMealPlanner,
+  onOpenRecipeImport,
 }) => {
   // 1. Búsqueda y Generación Directa por Nombre de Receta (Escribir o Decir por Voz)
   const [recipeNameInput, setRecipeNameInput] = useState('');
@@ -383,6 +385,18 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
                 {idea}
               </button>
             ))}
+
+            {onOpenRecipeImport && (
+              <button
+                type="button"
+                onClick={onOpenRecipeImport}
+                className="px-2.5 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-black transition cursor-pointer border border-amber-300 flex items-center gap-1 shadow-2xs"
+                title="Pegar texto de un blog o enlace y limpiarlo al instante"
+              >
+                <span>📋</span>
+                <span>Importar Receta (Pegar de Blog o Web)</span>
+              </button>
+            )}
           </div>
         </div>
       </section>

@@ -14,7 +14,7 @@ export interface HandsFreeVoiceCallbacks {
   onNextStep: () => void;
   onPrevStep: () => void;
   onRepeatStep: () => void;
-  onStartTimer: () => void;
+  onStartTimer: (seconds?: number) => void;
   onPauseTimer: () => void;
   onEmergency: () => void;
   onStatusChange?: (isListening: boolean, lastHeardWord?: string) => void;
@@ -215,19 +215,41 @@ export class HandsFreeCookingListener {
       return true;
     }
 
-    // 4. Temporizador (Arrancar cronómetro del paso actual)
+    // 4. Temporizador (Arrancar cronómetro del paso actual o con minutos específicos)
     if (
       t.includes('tiempo') ||
       t.includes('temporizador') ||
       t.includes('cronometro') ||
+      t.includes('minuto') ||
+      t.includes('minutos') ||
       t.includes('iniciar') ||
       t.includes('arranca') ||
       t.includes('empieza') ||
       t.includes('cuenta regresiva')
     ) {
+      let customSeconds: number | undefined = undefined;
+      const numMatch = t.match(/(\d+)\s*(?:minuto|minutos|min|m)/i);
+      if (numMatch && numMatch[1]) {
+        customSeconds = parseInt(numMatch[1], 10) * 60;
+      } else if (t.includes('un minuto') || t.includes('1 minuto')) {
+        customSeconds = 60;
+      } else if (t.includes('dos minutos') || t.includes('2 minutos')) {
+        customSeconds = 120;
+      } else if (t.includes('tres minutos') || t.includes('3 minutos')) {
+        customSeconds = 180;
+      } else if (t.includes('cuatro minutos') || t.includes('4 minutos')) {
+        customSeconds = 240;
+      } else if (t.includes('cinco minutos') || t.includes('5 minutos')) {
+        customSeconds = 300;
+      } else if (t.includes('diez minutos') || t.includes('10 minutos')) {
+        customSeconds = 600;
+      } else if (t.includes('30 segundos') || t.includes('treinta segundos')) {
+        customSeconds = 30;
+      }
+
       this.lastTriggeredTime = now;
       this.callbacks.onCommandExecuted?.('temporizador', text);
-      this.callbacks.onStartTimer();
+      this.callbacks.onStartTimer(customSeconds);
       return true;
     }
 

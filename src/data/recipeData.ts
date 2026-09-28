@@ -1,4 +1,5 @@
 import { Recipe, WorldCuisine } from '../types';
+import { CRIOLLO_RECIPES } from './criolloRecipes';
 
 export const WORLD_CUISINES: WorldCuisine[] = [
   {
@@ -1693,5 +1694,7 @@ export const STARTER_RECIPES: Recipe[] = [
       },
     ],
   },
+  // Recetas Criollas y Autóctonas
+  ...CRIOLLO_RECIPES,
 ];
 

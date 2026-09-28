@@ -41,8 +41,22 @@ import { StepVisualTextureCard } from './StepVisualTextureCard';
 import { InteractiveInstructionText } from './InteractiveInstructionText';
 import { IngredientSubstituteDrawer } from './IngredientSubstituteDrawer';
 import { ImmersiveCookModeModal } from './ImmersiveCookModeModal';
+import { PanProcessInspectorModal } from './PanProcessInspectorModal';
 import { convertIngredientUnits, MeasurementSystem } from '../utils/unitConverter';
 import { detectAllergensInIngredients } from '../utils/allergenDetector';
+
+function getRecipeToolsSummary(recipe: Recipe): string {
+  const stepsText = recipe.steps.map((s) => s.instruction + ' ' + s.title).join(' ').toLowerCase();
+  const tools: string[] = [];
+  if (stepsText.includes('sartén') || stepsText.includes('sarten')) tools.push('1 sartén');
+  else if (stepsText.includes('olla')) tools.push('1 olla');
+  else tools.push('1 sartén o cazuela');
+
+  tools.push('1 tabla de picar');
+  if (stepsText.includes('espátula') || stepsText.includes('espatula')) tools.push('1 espátula');
+  else tools.push('1 cuchara de madera');
+  return tools.join(' · ');
+}
 
 interface CookingModeProps {
   userProfile: UserProfile;
@@ -131,6 +145,8 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   const [isScienceExpanded, setIsScienceExpanded] = useState(false);
   // Desplegable de radar sensorial por paso (Regla de 1 pantalla, 1 acción: colapsado por defecto para evitar sobrecarga)
   const [isSensoryRadarExpanded, setIsSensoryRadarExpanded] = useState(false);
+  // Desplegable de textura y referencias visuales del paso
+  const [isVisualCuesExpanded, setIsVisualCuesExpanded] = useState(false);
 
   // Flujo ordenado por etapas para eliminar el caos visual y la sobrecarga de información
   const [cookingStage, setCookingStage] = useState<'receta' | 'mise' | 'fuegos'>('receta');
@@ -139,6 +155,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   const [showIngredientsInCooking, setShowIngredientsInCooking] = useState(false);
   const [substituteTargetIngredient, setSubstituteTargetIngredient] = useState<string | null>(null);
   const [isImmersiveCookModeOpen, setIsImmersiveCookModeOpen] = useState(false);
+  const [isPanInspectorOpen, setIsPanInspectorOpen] = useState(false);
 
   // Escalador de porciones inteligente (1, 2, 4 porciones) y conversor de unidades
   const [targetServings, setTargetServings] = useState<number>(selectedRecipe.servings || 2);
@@ -284,14 +301,18 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           speakSpanishText(`Paso ${step.stepNumber}: ${step.title}. ${step.instruction}`);
         }
       },
-      onStartTimer: () => {
+      onStartTimer: (customSeconds?: number) => {
         const step = selectedRecipe.steps[currentStepIndex];
-        if (step?.timerSeconds) {
-          handleStartTimer(step.timerSeconds, step.timerLabel || `Paso ${step.stepNumber}`, currentStepIndex);
-          speakSpanishText(`Temporizador de ${Math.round(step.timerSeconds / 60)} minutos iniciado.`);
-        } else {
-          speakSpanishText('Este paso no requiere temporizador fijo.');
-        }
+        const secondsToUse = customSeconds || step?.timerSeconds || 180;
+        const label = customSeconds
+          ? `Temporizador de ${Math.round(customSeconds / 60)} min`
+          : (step?.timerLabel || `Paso ${step?.stepNumber || currentStepIndex + 1}`);
+
+        handleStartTimer(secondsToUse, label, currentStepIndex);
+        const mins = Math.floor(secondsToUse / 60);
+        const secs = secondsToUse % 60;
+        const text = mins > 0 ? `${mins} minuto${mins > 1 ? 's' : ''}` : `${secs} segundos`;
+        speakSpanishText(`Temporizador de ${text} iniciado.`);
       },
       onPauseTimer: () => {
         setActiveTimers((prev) => prev.map((t) => ({ ...t, isRunning: false })));
@@ -428,6 +449,11 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           let remaining = timer.remainingSeconds - 1;
           if (timer.targetTimestamp) {
             remaining = Math.max(0, Math.round((timer.targetTimestamp - Date.now()) / 1000));
+          }
+
+          if (remaining === 30 && timer.totalSeconds > 35) {
+            playTimerCompletionChime();
+            speakSpanishText(`¡Atención! Faltan 30 segundos en ${timer.label}. Acércate a la hornalla con la espátula.`);
           }
 
           if (remaining <= 0) {
@@ -1315,43 +1341,86 @@ export const CookingMode: React.FC<CookingModeProps> = ({
             </div>
           </div>
 
-          {/* Recipe Header Card with Safety Alerts & Details */}
-          <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-sm">
-            <div className="relative h-48 sm:h-64 w-full bg-stone-100">
+          {/* Recipe Header Card with Safety Alerts & Details (Efecto Revista Culinaria) */}
+          <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-md">
+            <div className="relative h-56 sm:h-72 w-full bg-stone-900">
               <img
                 src={selectedRecipe.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'}
                 alt={selectedRecipe.title}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover opacity-90"
                 referrerPolicy="no-referrer"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-900/85 via-stone-900/35 to-transparent flex items-end p-5">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/50 to-transparent flex items-end p-5 sm:p-7">
+                <div className="space-y-1.5 w-full">
+                  {selectedRecipe.magazineEditorialKicker && (
+                    <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 font-serif">
+                      ✦ {selectedRecipe.magazineEditorialKicker}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
                     <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
                       (selectedRecipe.requiredLevel || 1) <= userProfile.level
-                        ? 'bg-emerald-500 text-white'
-                        : 'bg-amber-400 text-stone-900'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-amber-400 text-stone-950'
                     }`}>
                       {(selectedRecipe.requiredLevel || 1) <= userProfile.level
                         ? `🌱 Nivel ${selectedRecipe.requiredLevel || 1} (Desbloqueado)`
                         : `🔒 Nivel ${selectedRecipe.requiredLevel || 1} (Desafío)`}
                     </span>
-                    <span className="text-xs bg-amber-500 text-stone-900 px-2.5 py-0.5 rounded-full font-bold">
+                    <span className="text-xs bg-stone-900/90 text-amber-200 px-2.5 py-0.5 rounded-full font-bold border border-amber-500/30">
                       {selectedRecipe.difficulty}
                     </span>
-                    <span className="text-xs bg-stone-800/80 text-white px-2.5 py-0.5 rounded-full font-semibold">
-                      {selectedRecipe.steps.length} pasos sencillos
+                    <span className="text-xs bg-white/20 text-white backdrop-blur-xs px-2.5 py-0.5 rounded-full font-semibold">
+                      {selectedRecipe.steps.length} pasos
                     </span>
                   </div>
-                  <h3 className="text-2xl sm:text-3xl font-extrabold text-white">
+                  <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white font-serif tracking-tight leading-tight">
                     {selectedRecipe.title}
                   </h3>
-                  <p className="text-xs sm:text-sm text-stone-200 max-w-xl mt-1">
+                  <p className="text-xs sm:text-sm text-stone-300 max-w-2xl font-medium leading-relaxed">
                     {selectedRecipe.description}
                   </p>
                 </div>
               </div>
             </div>
+
+            {/* Cuaderno del Editor Gastronómico / Tasting Notes (Efecto Revista) */}
+            {selectedRecipe.magazineTastingNotes && (
+              <div className="bg-stone-50 border-b border-stone-200/90 p-4 sm:p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[11px] uppercase tracking-widest font-black text-stone-600 font-serif">
+                    📖 Cuaderno del Editor Gastronómico
+                  </span>
+                  <div className="h-px flex-1 bg-stone-200" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="bg-white p-3 rounded-2xl border border-stone-200/80 shadow-2xs">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 block mb-1">
+                      🌿 Perfil Aromático
+                    </span>
+                    <p className="text-stone-700 leading-snug">
+                      {selectedRecipe.magazineTastingNotes.aromaProfile}
+                    </p>
+                  </div>
+                  <div className="bg-white p-3 rounded-2xl border border-stone-200/80 shadow-2xs">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 block mb-1">
+                      🥄 Sensación en Boca
+                    </span>
+                    <p className="text-stone-700 leading-snug">
+                      {selectedRecipe.magazineTastingNotes.mouthfeel}
+                    </p>
+                  </div>
+                  <div className="bg-white p-3 rounded-2xl border border-stone-200/80 shadow-2xs">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 block mb-1">
+                      👵 Secreto de la Abuela
+                    </span>
+                    <p className="text-stone-700 leading-snug">
+                      {selectedRecipe.magazineTastingNotes.grandmotherSecret}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Meta Pedagógica de la Receta */}
             {selectedRecipe.learningGoal && (
@@ -1938,6 +2007,20 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           </span>
         </div>
 
+        {/* Medidor de Loza y Utensilios a Ensuciar (Inspirado en Mealime & Reddit) */}
+        <div className="bg-stone-50/90 border-b border-stone-200 px-5 py-3 flex items-center justify-between text-xs text-stone-700">
+          <div className="flex items-center gap-2.5">
+            <span className="text-base">🍽️</span>
+            <div>
+              <span className="font-bold text-stone-900 block">Loza y utensilios a ensuciar:</span>
+              <span className="text-stone-600 text-[11px]">{getRecipeToolsSummary(selectedRecipe)}</span>
+            </div>
+          </div>
+          <span className="text-[10px] bg-stone-200/80 text-stone-800 font-bold px-2 py-0.5 rounded-full">
+            Poco que lavar
+          </span>
+        </div>
+
         {/* Cultural Secret Card */}
         {selectedRecipe.culturalSecret && (
           <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent p-4 border-b border-amber-200/90 flex items-start gap-3">
@@ -2299,7 +2382,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       )}
 
       {/* Phase 2: Guided Step-by-Step Cooking with Timers */}
-      <div className={`bg-white rounded-2xl border-2 border-amber-300 p-5 sm:p-6 shadow-md space-y-5 transition-all ${
+      <div className={`bg-white rounded-2xl border-2 border-amber-300 p-5 sm:p-6 pb-28 shadow-md space-y-5 transition-all ${
         isFullScreenCooking
           ? 'fixed inset-0 z-50 overflow-y-auto m-0 rounded-none border-none p-6 sm:p-10 bg-white max-w-none'
           : ''
@@ -2463,15 +2546,15 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               )}
             </button>
 
-            {/* Modo Pantalla Completa Inmersivo estilo NYT Cooking */}
+            {/* Modo Pantalla Completa Inmersivo estilo Teleprompter / NYT Cooking */}
             <button
               onClick={() => setIsImmersiveCookModeOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer ring-2 ring-amber-300/80"
-              title="Abrir Modo Cocina Inmersivo: texto gigante, controles táctiles grandes y sin distracciones"
+              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer ring-2 ring-amber-300"
+              title="👁️ Modo Enfoque Zen: pantalla completa, texto gigante visible a 1 metro y cero distracciones"
             >
               <Maximize2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Modo Cocina</span>
-              <span className="sm:hidden">Cocina</span>
+              <span className="hidden sm:inline">👁️ Modo Enfoque Zen</span>
+              <span className="sm:hidden">👁️ Enfoque</span>
             </button>
 
             {/* Botón de Pánico / S.O.S. Cocina */}
@@ -2643,6 +2726,81 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               );
 
               if (stepTimer) {
+                const isThirtySecWarning = stepTimer.remainingSeconds <= 30 && stepTimer.remainingSeconds > 0 && stepTimer.isRunning;
+                const isCompleted = stepTimer.remainingSeconds === 0;
+
+                if (isThirtySecWarning) {
+                  return (
+                    <div className="mt-3 p-5 sm:p-6 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-stone-950 rounded-3xl shadow-xl ring-4 ring-amber-300 animate-pulse border-2 border-stone-950/20">
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-center sm:text-left space-y-1">
+                          <div className="inline-flex items-center gap-2 bg-stone-950 text-amber-300 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                            <span>⚠️ ¡Alerta preventiva: 30 segundos!</span>
+                          </div>
+                          <h4 className="text-lg sm:text-xl font-black text-stone-950 tracking-tight font-serif">
+                            Acércate a la hornalla con la espátula
+                          </h4>
+                          <p className="text-xs sm:text-sm font-bold text-stone-900/90">
+                            Prepárate para apagar o retirar a tiempo para evitar que se queme.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="text-5xl sm:text-6xl font-black font-mono tracking-tighter text-stone-950 bg-white/40 px-4 py-2 rounded-2xl shadow-inner tabular-nums">
+                            {formatSeconds(stepTimer.remainingSeconds)}
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleStartTimer(stepTimer.remainingSeconds + 60, stepTimer.label, stepTimer.stepIndex)}
+                              className="px-3 py-1.5 bg-stone-950 text-white rounded-xl text-xs font-black shadow-xs hover:bg-stone-800 transition active:scale-95 cursor-pointer"
+                              title="Sumar 1 minuto"
+                            >
+                              +1 min
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleTimerPause(stepTimer.id)}
+                              className="px-3 py-1.5 bg-white text-stone-950 rounded-xl text-xs font-black shadow-xs hover:bg-stone-100 transition active:scale-95 cursor-pointer"
+                            >
+                              Pausar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (isCompleted) {
+                  return (
+                    <div className="mt-3 p-5 sm:p-6 bg-rose-600 text-white rounded-3xl shadow-xl ring-4 ring-rose-400 border-2 border-stone-950/20 animate-bounce">
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-center sm:text-left space-y-1">
+                          <div className="inline-flex items-center gap-2 bg-white text-rose-700 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm">
+                            <span>🔔 ¡Tiempo Cumplido!</span>
+                          </div>
+                          <h4 className="text-lg sm:text-xl font-black tracking-tight font-serif">
+                            ¡Apaga la hornalla o retira del fuego ahora!
+                          </h4>
+                          <p className="text-xs sm:text-sm text-rose-100 font-medium">
+                            {stepTimer.label} ha completado su tiempo programado.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeTimer(stepTimer.id)}
+                          className="px-5 py-3 bg-white text-rose-700 hover:bg-rose-50 rounded-2xl text-sm font-black shadow-md transition active:scale-95 cursor-pointer"
+                        >
+                          Entendido, ya apagué
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Normal state (> 30s)
                 return (
                   <div className="mt-3 p-4 bg-amber-500/15 border-2 border-amber-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
                     <div className="flex items-center gap-3">
@@ -2687,45 +2845,114 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               }
 
               return (
-                <div className="mt-3 pt-2.5 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleStartTimer(
-                        currentStep.timerSeconds!,
-                        currentStep.timerLabel || `Paso ${currentStep.stepNumber}`,
-                        currentStep.stepNumber
-                      )
-                    }
-                    className="px-5 py-3 bg-amber-500 hover:bg-amber-600 active:scale-98 text-stone-950 font-black rounded-xl text-sm flex items-center gap-2.5 shadow-xs transition cursor-pointer"
-                  >
-                    <Clock className="w-5 h-5 text-stone-950" />
-                    <span>Iniciar temporizador: {formatSeconds(currentStep.timerSeconds)}</span>
-                    <Play className="w-3.5 h-3.5 fill-stone-950 ml-1" />
-                  </button>
+                <div className="mt-3 pt-2.5 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleStartTimer(
+                          currentStep.timerSeconds!,
+                          currentStep.timerLabel || `Paso ${currentStep.stepNumber}`,
+                          currentStep.stepNumber
+                        )
+                      }
+                      className="px-5 py-3 bg-amber-500 hover:bg-amber-600 active:scale-98 text-stone-950 font-black rounded-2xl text-sm flex items-center gap-2.5 shadow-xs transition cursor-pointer"
+                    >
+                      <Clock className="w-5 h-5 text-stone-950" />
+                      <span>Iniciar temporizador: {formatSeconds(currentStep.timerSeconds)}</span>
+                      <Play className="w-3.5 h-3.5 fill-stone-950 ml-1" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isHandsFreeActive) {
+                          setIsHandsFreeActive(true);
+                          speakSpanishText('Modo manos libres activado. Di: Chef, pon tiempo o iniciar.');
+                        } else {
+                          setIsHandsFreeActive(false);
+                        }
+                      }}
+                      className={`px-3.5 py-3 rounded-2xl border text-xs font-black flex items-center gap-1.5 transition cursor-pointer active:scale-98 ${
+                        isHandsFreeActive
+                          ? 'bg-amber-100 border-amber-400 text-amber-950 shadow-xs ring-2 ring-amber-300'
+                          : 'bg-stone-100 hover:bg-stone-200 border-stone-300 text-stone-700'
+                      }`}
+                      title={isHandsFreeActive ? 'Micrófono activo para manos sucias' : 'Activar control por voz para manos libres'}
+                    >
+                      <Mic className={`w-4 h-4 ${isHandsFreeActive ? 'text-amber-800 animate-pulse' : 'text-stone-500'}`} />
+                      <span>
+                        {isHandsFreeActive ? 'Escuchando voz' : 'Por voz'}
+                      </span>
+                    </button>
+                  </div>
+
                   <span className="text-xs text-stone-500 font-medium hidden sm:inline">
-                    🔔 Aviso con sonido y pantalla encendida
+                    🔔 Aviso visual y sonoro a los 30s
                   </span>
                 </div>
               );
             })()}
           </div>
 
-          {/* Marcador Dinámico de Textura, Color y Referencia Visual del Paso */}
-          <StepVisualTextureCard
-            key={`step-visual-${selectedRecipe.id}-${currentStep.stepNumber}`}
-            step={currentStep}
-            recipeTitle={selectedRecipe.title}
-            recipeImageUrl={selectedRecipe.imageUrl}
-            onAskChefVisual={(query) => {
-              onOpenVoiceAssistantWithContext({
-                recipeTitle: selectedRecipe.title,
-                stepNumber: currentStep.stepNumber,
-                stepInstruction: query || currentStep.instruction,
-                heatLevel: currentStep.heatLevel,
-              });
-            }}
-          />
+          {/* EL OJO DEL CHEF EN LA SARTÉN (Foto al proceso en vivo) */}
+          <div className="pt-1 pb-2">
+            <button
+              type="button"
+              onClick={() => setIsPanInspectorOpen(true)}
+              className="w-full p-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-600 hover:to-orange-600 text-stone-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all active:scale-98 cursor-pointer ring-2 ring-amber-300/60"
+            >
+              <Camera className="w-5 h-5 text-stone-950 animate-pulse" />
+              <span>📸 ¿Cómo va mi sartén u olla? (Foto y diagnóstico en vivo)</span>
+              <span className="text-[10px] bg-white/90 text-stone-950 px-2 py-0.5 rounded-full font-bold shadow-2xs">
+                IA en Vivo
+              </span>
+            </button>
+          </div>
+
+          {/* Marcador Dinámico de Textura, Color y Referencia Visual del Paso (Colapsable para no sobrecargar) */}
+          <div className="border border-stone-200/90 rounded-2xl overflow-hidden bg-white shadow-2xs transition">
+            <button
+              type="button"
+              onClick={() => setIsVisualCuesExpanded(!isVisualCuesExpanded)}
+              className="w-full px-4 py-2.5 text-left text-xs font-bold text-stone-800 hover:bg-stone-50 flex items-center justify-between transition cursor-pointer"
+              aria-expanded={isVisualCuesExpanded}
+            >
+              <span className="flex items-center gap-2">
+                <span>🎨</span>
+                <span className="font-extrabold text-stone-900">
+                  {currentStep.stepVisualCueLabel ? `Textura y Color esperado: ${currentStep.stepVisualCueLabel}` : 'Textura y Referencia Visual del Paso'}
+                </span>
+              </span>
+              <div className="flex items-center gap-1.5 text-[11px] text-stone-500 font-semibold">
+                <span>{isVisualCuesExpanded ? 'Ocultar' : 'Ver aspecto'}</span>
+                {isVisualCuesExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-stone-600" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-stone-600" />
+                )}
+              </div>
+            </button>
+
+            {isVisualCuesExpanded && (
+              <div className="p-3 pt-1 border-t border-stone-100 bg-stone-50/50 animate-fade-in">
+                <StepVisualTextureCard
+                  key={`step-visual-${selectedRecipe.id}-${currentStep.stepNumber}`}
+                  step={currentStep}
+                  recipeTitle={selectedRecipe.title}
+                  recipeImageUrl={selectedRecipe.imageUrl}
+                  onAskChefVisual={(query) => {
+                    onOpenVoiceAssistantWithContext({
+                      recipeTitle: selectedRecipe.title,
+                      stepNumber: currentStep.stepNumber,
+                      stepInstruction: query || currentStep.instruction,
+                      heatLevel: currentStep.heatLevel,
+                    });
+                  }}
+                />
+              </div>
+            )}
+          </div>
 
           {/* Galería e Imagen Sugerida del Plato Terminado tras el último paso de la guía */}
           {currentStepIndex === selectedRecipe.steps.length - 1 && (
@@ -3580,6 +3807,102 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           onToggleSilent={toggleSilentMode}
           onOpenEmergency={() => setIsEmergencyModalOpen(true)}
         />
+      )}
+
+      {/* Modal: El Ojo del Chef en la Sartén (Inspección Visual con Foto en Vivo) */}
+      <PanProcessInspectorModal
+        isOpen={isPanInspectorOpen}
+        onClose={() => setIsPanInspectorOpen(false)}
+        step={currentStep}
+        recipeTitle={selectedRecipe.title}
+        targetCue={currentStep.stepVisualCueLabel}
+      />
+
+      {/* 4. BARRA INFERIOR FLOTANTE FIJA (THUMB ZONE) DURANTE LA COCCIÓN */}
+      {/* Garantiza avance con 1 solo toque de pulgar o nudillo sin tener que hacer scroll con manos sucias */}
+      {cookingStage === 'fuegos' && !isImmersiveCookModeOpen && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-stone-900/95 backdrop-blur-md border-t border-stone-800 px-4 py-3 shadow-2xl transition-transform animate-slide-up">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+            {/* Botón Paso Anterior */}
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentStepIndex((prev) => Math.max(0, prev - 1));
+                window.scrollTo({ top: 380, behavior: 'smooth' });
+              }}
+              disabled={currentStepIndex === 0}
+              className="h-12 px-4 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:pointer-events-none text-stone-200 font-bold text-xs sm:text-sm flex items-center gap-1.5 transition cursor-pointer active:scale-95 shrink-0"
+              title="Volver al paso anterior"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Paso Anterior</span>
+              <span className="sm:hidden">Atrás</span>
+            </button>
+
+            {/* Centro: Indicador de Paso + Micrófono Manos Libres */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold text-stone-300 hidden md:inline">
+                Paso {currentStepIndex + 1}/{selectedRecipe.steps.length}
+              </span>
+
+              {/* Botón rápido de micrófono para hablar sin tocar */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextState = !isHandsFreeActive;
+                  setIsHandsFreeActive(nextState);
+                  if (nextState) {
+                    speakSpanishText('Escuchando: di siguiente o temporizador.');
+                  }
+                }}
+                className={`h-11 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer active:scale-95 ${
+                  isHandsFreeActive
+                    ? 'bg-amber-500 text-stone-950 ring-2 ring-amber-300 animate-pulse font-black'
+                    : 'bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700'
+                }`}
+                title={isHandsFreeActive ? 'Micrófono activo' : 'Toca para hablar manos libres'}
+              >
+                {isHandsFreeActive ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                <span className="hidden sm:inline">{isHandsFreeActive ? 'Voz ON' : 'Manos Libres'}</span>
+              </button>
+
+              {/* Acceso Rápido al Modo Enfoque Zen */}
+              <button
+                type="button"
+                onClick={() => setIsImmersiveCookModeOpen(true)}
+                className="h-11 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-400 border border-stone-700 font-bold text-xs flex items-center gap-1 transition cursor-pointer active:scale-95"
+                title="Ver pantalla completa estilo teleprompter"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Enfoque</span>
+              </button>
+            </div>
+
+            {/* Botón Siguiente Paso / Terminar */}
+            {currentStepIndex < selectedRecipe.steps.length - 1 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentStepIndex((prev) => prev + 1);
+                  window.scrollTo({ top: 380, behavior: 'smooth' });
+                }}
+                className="h-12 px-5 sm:px-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-lg transition cursor-pointer active:scale-95 shrink-0"
+              >
+                <span>Siguiente Paso</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFinishCooking}
+                className="h-12 px-5 sm:px-6 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs sm:text-sm flex items-center gap-2 shadow-lg transition cursor-pointer active:scale-95 shrink-0"
+              >
+                <Award className="w-4 h-4" />
+                <span>¡Terminé!</span>
+              </button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

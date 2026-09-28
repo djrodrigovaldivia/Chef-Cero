@@ -285,6 +285,13 @@ export interface Recipe {
   pantrySubstitutes?: PantrySubstitute[];
   requiredLevel?: CulinaryLevel; // Nivel mínimo pedagógico (1: Cero absoluto, 2: Aprendiz, etc.)
   learningGoal?: string;        // Habilidad clave que se desbloquea al cocinar este plato
+  // Efecto Revista Gastronómica (Estilo NYT Cooking / Bon Appétit)
+  magazineEditorialKicker?: string;
+  magazineTastingNotes?: {
+    aromaProfile: string;
+    mouthfeel: string;
+    grandmotherSecret: string;
+  };
 }
 
 export interface ActiveTimer {

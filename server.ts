@@ -1209,6 +1209,193 @@ INSTRUCCIONES CLAVE DE EVALUACIÓN:
   }
 });
 
+// Endpoint: Inspección Visual del Proceso en la Sartén/Olla con Foto (El "Ojo del Chef en Vivo")
+app.post('/api/inspect-pan-process', async (req, res) => {
+  try {
+    const { imageBase64, mimeType, recipeTitle, stepNumber, stepInstruction, heatLevel, targetCue } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Imagen de sartén requerida' });
+    }
+
+    const ai = getAi();
+    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+    const actualMime = mimeType || 'image/jpeg';
+
+    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
+      return res.json({
+        status: 'perfecto',
+        statusBadge: '🟢 ¡Va en su punto perfecto!',
+        visualDiagnosis: 'La textura y el brillo en la superficie muestran una cocción uniforme. No hay signos de resequedad ni bordes quemados.',
+        whatIsMissingOrExcess: 'La cantidad de grasa y la distribución de calor están equilibradas.',
+        immediateAction: 'Mantén el movimiento suave con la espátula durante 35 segundos más antes de avanzar.',
+        chefTip: 'Buen control de llama: el calor medio permite que los sabores se concentren sin arrebatarse.',
+        audioScript: 'He revisado tu sartén. La cocción va a un ritmo excelente y con muy buen color. Mantén la llama como está y remueve suavemente.',
+      });
+    }
+
+    const prompt = `Eres el Chef Mentor en vivo de Chef Cero, la app para aprender a cocinar sin miedo.
+El aprendiz está cocinando la receta "${recipeTitle || 'Receta en sartén'}", en el PASO ${stepNumber || 1}:
+Instrucción del paso: "${stepInstruction || 'Cocinar en sartén'}"
+Nivel de fuego del paso: "${heatLevel || 'medio'}"
+Aspecto esperado según la receta: "${targetCue || 'Dorado suave sin quemar'}"
+
+El aprendiz acaba de tomar una FOTO de su sartén u olla en este momento y te pregunta:
+"¿Cómo va mi preparación? ¿Va bien o mal? ¿Le falta o le sobra algo? ¿Qué hago ahora mismo?"
+
+INSPECCIONA LA FOTO CON MÁXIMO RIGOR CULINARIO Y EMPATÍA:
+1. status:
+   - 'perfecto': Si el color, textura, vapor y caramelización corresponden perfectamente al objetivo del paso.
+   - 'falta_tiempo': Si todavía está crudo, pálido, o con exceso de líquido que necesita reducir.
+   - 'ajustar_fuego': Si el fuego está demasiado alto (salpicaduras violentas, bordes oscureciéndose antes del centro) o demasiado bajo (sancochándose en su propia agua).
+   - 'alerta_retirar': Si hay humo denso, fondo ennegrecido o riesgo inminente de pegarse/quemarse.
+2. statusBadge: Frase titular corta con emoji (ej. "🟢 Va Perfecto", "🟡 Le Falta un Poco", "🟠 Fuego Alto: Ajustar", "🔴 ¡Alerta: Retirar!").
+3. visualDiagnosis: Explica detalladamente y en lenguaje cotidiano lo que ves en la foto (color exacto, burbujeo, humedad, trozos pegados o sueltos).
+4. whatIsMissingOrExcess: Señala si le falta tiempo, si le falta aceite/agua, o si le sobra calor.
+5. immediateAction: Instrucción clara, directa y urgente de 1 sola frase (ej. "Baja la hornalla al mínimo y remueve durante 40 segundos hacia el centro").
+6. chefTip: Consejo formativo para que aprenda el porqué de lo ocurrido.
+7. audioScript: 2 o 3 oraciones cálidas en español latinoamericano para leerle al aprendiz por voz.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: actualMime,
+                data: cleanBase64,
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            status: { type: Type.STRING, description: 'perfecto | falta_tiempo | ajustar_fuego | alerta_retirar' },
+            statusBadge: { type: Type.STRING, description: 'Título visual con emoji' },
+            visualDiagnosis: { type: Type.STRING, description: 'Descripción de lo visible en la foto' },
+            whatIsMissingOrExcess: { type: Type.STRING, description: 'Qué le falta o qué le sobra' },
+            immediateAction: { type: Type.STRING, description: 'Acción inmediata en 1 frase' },
+            chefTip: { type: Type.STRING, description: 'Consejo formativo del Chef' },
+            audioScript: { type: Type.STRING, description: 'Texto breve para lectura por voz' },
+          },
+          required: ['status', 'statusBadge', 'visualDiagnosis', 'whatIsMissingOrExcess', 'immediateAction', 'chefTip', 'audioScript'],
+        },
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, {} as any);
+    if (!parsed || !parsed.status) {
+      throw new Error('Respuesta inválida de Gemini al inspeccionar sartén');
+    }
+
+    try {
+      if (parsed.audioScript) {
+        const audioPromise = generateSpanishSpeechAudio(ai, parsed.audioScript);
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
+        const audioResult = await Promise.race([audioPromise, timeoutPromise]);
+        if (audioResult) {
+          parsed.audioBase64 = audioResult.audioBase64;
+          parsed.audioMimeType = audioResult.mimeType;
+        }
+      }
+    } catch (ttsErr) {
+      console.warn('Chef Cero: Aviso generando audio de sartén:', ttsErr);
+    }
+
+    return res.json(parsed);
+  } catch (err: any) {
+    console.warn('Chef Cero: Error en endpoint /api/inspect-pan-process:', err?.message);
+    return res.status(500).json({
+      error: 'No pudimos analizar la foto de la sartén. Intenta enfocar más de cerca la comida con buena luz.',
+    });
+  }
+});
+
+// Endpoint: Importador y limpiador inteligente de recetas (Estilo Paprika / Reddit)
+app.post('/api/recipe/clean-import', async (req, res) => {
+  try {
+    const { rawContent } = req.body;
+    if (!rawContent || typeof rawContent !== 'string') {
+      return res.status(400).json({ error: 'Contenido o enlace requerido' });
+    }
+
+    const ai = getAi();
+    const prompt = `Eres el Limpiador Inteligente de Recetas de Chef Cero (inspirado en la precisión de Paprika y la simplicidad para novatos).
+El usuario te ha pegado el siguiente contenido copiado de una web, blog o video de cocina (que suele incluir historias personales largas, anuncios o pasos desordenados):
+
+"""
+${rawContent.slice(0, 4000)}
+"""
+
+TU MISIÓN:
+1. Elimina toda la paja, historias personales, texto publicitario o introducciones irrelevantes.
+2. Extrae el título limpio del plato.
+3. Extrae la lista exacta de ingredientes para el Mise en place (cantidades y medidas claras).
+4. Identifica los utensilios mínimos necesarios (ej. "1 sartén mediana", "1 tabla de picar", "1 cuchara de madera").
+5. REGLA SUPREMA PARA PRINCIPIANTES:
+   - El PASO 1 SIEMPRE debe ser con heatLevel: 'apagado' ("Mise en place: todo lavado, pelado y picado en platitos antes de encender el fuego").
+   - Divide la preparación en pasos secuenciales simples y numerados (máximo 6 pasos).
+   - Asigna heatLevel preciso ('apagado' | 'bajo' | 'medio' | 'alto') a cada paso.
+   - Detecta si un paso requiere temporizador (ej. si dice 5 minutos -> timerSeconds: 300).
+   - Añade un 'tip' empático de novato a cada paso para que no se queme ni se pegue.
+6. Genera un JSON estructurado listo para Chef Cero.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            description: { type: Type.STRING },
+            totalTimeMinutes: { type: Type.INTEGER },
+            servings: { type: Type.INTEGER },
+            difficulty: { type: Type.STRING },
+            requiredTools: { type: Type.ARRAY, items: { type: Type.STRING } },
+            miseEnPlace: { type: Type.ARRAY, items: { type: Type.STRING } },
+            safetyAlerts: { type: Type.ARRAY, items: { type: Type.STRING } },
+            steps: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  stepNumber: { type: Type.INTEGER },
+                  title: { type: Type.STRING },
+                  instruction: { type: Type.STRING },
+                  heatLevel: { type: Type.STRING, description: 'apagado | bajo | medio | alto' },
+                  tip: { type: Type.STRING },
+                  timerSeconds: { type: Type.INTEGER },
+                  timerLabel: { type: Type.STRING },
+                },
+                required: ['stepNumber', 'title', 'instruction', 'heatLevel', 'tip'],
+              },
+            },
+          },
+          required: ['title', 'description', 'totalTimeMinutes', 'servings', 'requiredTools', 'miseEnPlace', 'steps'],
+        },
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, {} as any);
+    if (!parsed || !parsed.title) {
+      throw new Error('Respuesta inválida al limpiar receta');
+    }
+
+    return res.json(parsed);
+  } catch (err: any) {
+    console.warn('Chef Cero: Error en endpoint /api/recipe/clean-import:', err?.message);
+    return res.status(500).json({ error: 'No se pudo procesar y limpiar la receta' });
+  }
+});
+
 // Endpoint dedicado: Escaneo de Producto con Generación de 3 Recetas Progresivas por Nivel (Principiante, Intermedio y Experto)
 app.post('/api/product-trio-recipes', async (req, res) => {
   const defaultFallbackTrio: any = {

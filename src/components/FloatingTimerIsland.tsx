@@ -27,14 +27,17 @@ export const FloatingTimerIsland: React.FC<FloatingTimerIslandProps> = ({
   };
 
   const hasExpiredTimer = activeTimers.some((t) => t.remainingSeconds <= 0);
+  const hasThirtySecWarning = !hasExpiredTimer && activeTimers.some((t) => t.remainingSeconds > 0 && t.remainingSeconds <= 30 && t.isRunning);
 
   return (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 max-w-md w-[92%] sm:w-auto animate-fade-in pointer-events-auto">
       <div
-        className={`bg-stone-900/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border transition-all duration-300 ${
+        className={`backdrop-blur-md rounded-2xl shadow-2xl border transition-all duration-300 ${
           hasExpiredTimer
-            ? 'border-rose-500 ring-4 ring-rose-500/40 animate-pulse'
-            : 'border-stone-700 ring-1 ring-stone-800'
+            ? 'bg-rose-950/95 text-white border-rose-500 ring-4 ring-rose-500/40 animate-pulse'
+            : hasThirtySecWarning
+            ? 'bg-amber-950/95 text-amber-100 border-amber-400 ring-4 ring-amber-400/50 animate-pulse'
+            : 'bg-stone-900/95 text-white border-stone-700 ring-1 ring-stone-800'
         }`}
       >
         {/* Cabecera compacta o modo colapsado */}
@@ -47,6 +50,8 @@ export const FloatingTimerIsland: React.FC<FloatingTimerIslandProps> = ({
               className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold ${
                 hasExpiredTimer
                   ? 'bg-rose-600 text-white animate-bounce'
+                  : hasThirtySecWarning
+                  ? 'bg-amber-400 text-stone-950 animate-ping'
                   : 'bg-amber-500 text-stone-950'
               }`}
             >
@@ -54,6 +59,11 @@ export const FloatingTimerIsland: React.FC<FloatingTimerIslandProps> = ({
             </div>
 
             <div className="flex items-center gap-2 truncate">
+              {hasThirtySecWarning && (
+                <span className="text-[11px] bg-amber-400 text-stone-950 font-black px-2 py-0.5 rounded-md uppercase tracking-wider shrink-0">
+                  ⚠️ Faltan 30s
+                </span>
+              )}
               {activeTimers.slice(0, 2).map((t) => (
                 <div key={t.id} className="flex items-center gap-1.5 text-xs truncate">
                   <span className="font-semibold text-stone-300 truncate max-w-[90px]">

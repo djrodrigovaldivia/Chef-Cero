@@ -36,6 +36,7 @@ interface NavbarProps {
   onOpenMealPlanner?: () => void;
   onOpenVisualLoops?: () => void;
   onOpenEmergency?: () => void;
+  onOpenRecipeImport?: () => void;
   userProfile: UserProfile;
 }
 
@@ -47,6 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenMealPlanner,
   onOpenVisualLoops,
   onOpenEmergency,
+  onOpenRecipeImport,
   userProfile,
 }) => {
   const [navPushStatus, setNavPushStatus] = useState<string>('default');
@@ -255,6 +257,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                         </span>
                         <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.2 rounded-full">
                           4 seg
+                        </span>
+                      </button>
+                    )}
+
+                    {onOpenRecipeImport && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenRecipeImport();
+                          setIsToolsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-50 text-stone-700 hover:text-amber-950 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          <span>📋</span>
+                          <span>Importar Receta (Pegar Blog o Web)</span>
+                        </span>
+                        <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full">
+                          Paprika
                         </span>
                       </button>
                     )}

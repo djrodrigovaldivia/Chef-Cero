@@ -179,25 +179,46 @@ export const ImmersiveCookModeModal: React.FC<ImmersiveCookModeModalProps> = ({
             className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white leading-snug tracking-tight"
           />
 
-          {/* Temporizador Activo Gigante si está corriendo */}
+          {/* Temporizador Activo Gigante Colosal visible desde 2 metros si está corriendo */}
           {activeStepTimer && (
-            <div className="mt-4 p-4 rounded-2xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Clock className="w-6 h-6 text-amber-400 animate-spin" />
+            <div className={`mt-4 p-5 sm:p-6 rounded-3xl border-2 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${
+              activeStepTimer.remainingSeconds <= 30 && activeStepTimer.remainingSeconds > 0
+                ? 'bg-amber-500 text-stone-950 border-amber-300 ring-4 ring-amber-300 animate-pulse'
+                : activeStepTimer.remainingSeconds === 0
+                ? 'bg-rose-600 text-white border-rose-400 animate-bounce'
+                : 'bg-amber-500/15 border-amber-500/50 text-white'
+            }`}>
+              <div className="flex items-center gap-4">
+                <Clock className={`w-8 h-8 sm:w-10 h-10 ${
+                  activeStepTimer.remainingSeconds <= 30 ? 'text-stone-950 animate-spin' : 'text-amber-400'
+                }`} />
                 <div>
-                  <span className="text-xs text-stone-400 block font-bold">Temporizador en curso:</span>
-                  <span className="text-2xl font-mono font-black text-amber-300">
+                  <span className={`text-xs block font-black uppercase tracking-wider ${
+                    activeStepTimer.remainingSeconds <= 30 ? 'text-stone-950' : 'text-stone-400'
+                  }`}>
+                    {activeStepTimer.remainingSeconds <= 30 ? '⚠️ ¡Atento a la hornalla!' : 'Temporizador en curso:'}
+                  </span>
+                  <span className={`text-4xl sm:text-6xl font-mono font-black tracking-tight tabular-nums ${
+                    activeStepTimer.remainingSeconds <= 30 ? 'text-stone-950' : 'text-amber-300'
+                  }`}>
                     {Math.floor(activeStepTimer.remainingSeconds / 60)}:
                     {(activeStepTimer.remainingSeconds % 60).toString().padStart(2, '0')}
                   </span>
                 </div>
               </div>
-              <button
-                onClick={() => onStartTimer(activeStepTimer.remainingSeconds + 60, activeStepTimer.label, activeStepTimer.stepIndex)}
-                className="px-3 py-1.5 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs hover:bg-amber-400"
-              >
-                +1 min
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onStartTimer(activeStepTimer.remainingSeconds + 60, activeStepTimer.label, activeStepTimer.stepIndex)}
+                  className={`px-4 py-2.5 rounded-xl font-black text-xs transition cursor-pointer ${
+                    activeStepTimer.remainingSeconds <= 30
+                      ? 'bg-stone-950 text-white hover:bg-stone-800'
+                      : 'bg-amber-500 text-stone-950 hover:bg-amber-400'
+                  }`}
+                >
+                  +1 min
+                </button>
+              </div>
             </div>
           )}
         </div>

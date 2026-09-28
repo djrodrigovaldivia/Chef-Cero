@@ -14,6 +14,7 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 import { AccessibleSubtitles } from './components/AccessibleSubtitles';
 import { WeeklyMealPlannerModal } from './components/WeeklyMealPlannerModal';
 import { VisualTechniqueLoopModal } from './components/VisualTechniqueLoopModal';
+import { RecipeImportModal } from './components/RecipeImportModal';
 import { registerChefServiceWorker } from './utils/pushNotifications';
 import { STARTER_RECIPES } from './data/recipeData';
 import { Mic, ChefHat, Sparkles } from 'lucide-react';
@@ -122,6 +123,7 @@ export default function App() {
   const [isTechniquesOpen, setIsTechniquesOpen] = useState(false);
   const [isMealPlannerOpen, setIsMealPlannerOpen] = useState(false);
   const [isVisualLoopsOpen, setIsVisualLoopsOpen] = useState(false);
+  const [isRecipeImportOpen, setIsRecipeImportOpen] = useState(false);
   const [voiceContext, setVoiceContext] = useState<{
     recipeTitle?: string;
     stepNumber?: number;
@@ -249,6 +251,7 @@ export default function App() {
         onOpenTechniques={() => setIsTechniquesOpen(true)}
         onOpenMealPlanner={() => setIsMealPlannerOpen(true)}
         onOpenVisualLoops={() => setIsVisualLoopsOpen(true)}
+        onOpenRecipeImport={() => setIsRecipeImportOpen(true)}
         onOpenEmergency={() => {
           setVoiceContext({
             recipeTitle: 'Emergencia en sartén',
@@ -322,6 +325,7 @@ export default function App() {
               onOpenScanner={() => setActiveTab('escaner')}
               onOpenTechniques={() => setIsTechniquesOpen(true)}
               onOpenMealPlanner={() => setIsMealPlannerOpen(true)}
+              onOpenRecipeImport={() => setIsRecipeImportOpen(true)}
             />
           )
         )}
@@ -418,6 +422,17 @@ export default function App() {
       <VisualTechniqueLoopModal
         isOpen={isVisualLoopsOpen}
         onClose={() => setIsVisualLoopsOpen(false)}
+      />
+
+      {/* Importador y Limpiador de Recetas (Estilo Paprika / Reddit) */}
+      <RecipeImportModal
+        isOpen={isRecipeImportOpen}
+        onClose={() => setIsRecipeImportOpen(false)}
+        onRecipeImported={(recipe) => {
+          setSelectedRecipeForCooking(recipe);
+          setActiveTab('cocinar');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
       />
 
       {/* Indicador de Estado Sin Conexión (Caché Offline activa) */}
