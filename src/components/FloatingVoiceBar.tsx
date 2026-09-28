@@ -147,7 +147,7 @@ export const FloatingVoiceBar: React.FC<FloatingVoiceBarProps> = ({
     <aside
       id="floating-voice-bar"
       aria-label="Asistente de voz manos libres con forma de onda en tiempo real"
-      className="fixed bottom-5 right-5 z-30 transition-all duration-300"
+      className="fixed bottom-20 left-4 md:bottom-6 md:left-6 z-30 transition-all duration-300"
     >
       <button
         onClick={onOpenVoice}

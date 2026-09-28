@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Recipe, UserProfile } from '../types';
 import { STARTER_RECIPES } from '../data/recipeData';
+import { generateLocalRecipeFallback } from '../utils/recipeGeneratorFallback';
 
 interface SimpleModeViewProps {
   userProfile: UserProfile;
@@ -179,10 +180,16 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
         });
         return;
       }
-      throw new Error('Respuesta inválida');
     } catch (err: any) {
-      console.warn('Chef Cero: Error generando por nombre:', err);
-      setNameGenError('No pudimos conectar con el asistente. Inténtalo de nuevo o elige una receta de la lista.');
+      console.warn('Chef Cero: Servidor no respondió, activando recetario inteligente local:', err);
+      // Fallback infalible: crea o busca de inmediato la receta localmente para que el usuario NUNCA se quede bloqueado
+      try {
+        const fallbackRecipe = generateLocalRecipeFallback(nameToQuery, userProfile.levelTitle);
+        onSelectRecipe(fallbackRecipe);
+        return;
+      } catch (fallbackErr) {
+        setNameGenError('No pudimos conectar con el asistente. Inténtalo de nuevo o elige una receta de la lista.');
+      }
     } finally {
       setIsGeneratingByName(false);
     }

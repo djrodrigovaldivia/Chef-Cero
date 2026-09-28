@@ -21,3 +21,12 @@ body {
 .safe-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
 }
+
+/* Ocultar o reubicar insignias inyectadas por plataformas de hosting como Netlify */
+#netlify-badge,
+[data-netlify-badge],
+.netlify-badge {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

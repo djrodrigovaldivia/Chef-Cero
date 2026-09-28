@@ -331,11 +331,12 @@ export const Navbar: React.FC<NavbarProps> = ({
       </header>
 
       {/* 4. BARRA DE NAVEGACIÓN INFERIOR FIJA PARA MÓVILES (Estilo iOS / Android Nativo) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-3 py-2 flex items-center justify-around shadow-lg">
+      {/* Alineada hacia la izquierda con holgura a la derecha para que ningún sello de agua externo la tape */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-3 pr-24 py-2 flex items-center justify-start gap-4 sm:gap-6 shadow-lg">
         <button
           type="button"
           onClick={() => onSelectTab('cocinar')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition cursor-pointer ${
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition cursor-pointer ${
             activeTab === 'cocinar' ? 'text-amber-600 font-black' : 'text-stone-500 hover:text-stone-900 font-medium'
           }`}
         >
