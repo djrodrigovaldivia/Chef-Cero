@@ -87,7 +87,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   onNavigateToAutor,
 }) => {
   const [recipesList, setRecipesList] = useState<Recipe[]>(STARTER_RECIPES);
-  const [selectedRecipe, setSelectedRecipe] = useState<Recipe>(STARTER_RECIPES[0]);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe>(() => externalSelectedRecipe || STARTER_RECIPES[0]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [miseEnPlaceChecked, setMiseEnPlaceChecked] = useState<Record<string, boolean>>({});
 
@@ -97,9 +97,8 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       setCurrentStepIndex(0);
       setMiseEnPlaceChecked({});
       setCookingStage('mise');
-      if (onRecipeConsumed) onRecipeConsumed();
     }
-  }, [externalSelectedRecipe, onRecipeConsumed]);
+  }, [externalSelectedRecipe]);
 
   // World Cuisines and Budget Filtering
   const [selectedCuisine, setSelectedCuisine] = useState<WorldCuisineId>('todas');
@@ -149,7 +148,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   const [isVisualCuesExpanded, setIsVisualCuesExpanded] = useState(false);
 
   // Flujo ordenado por etapas para eliminar el caos visual y la sobrecarga de información
-  const [cookingStage, setCookingStage] = useState<'receta' | 'mise' | 'fuegos'>('receta');
+  const [cookingStage, setCookingStage] = useState<'receta' | 'mise' | 'fuegos'>(() => externalSelectedRecipe ? 'mise' : 'receta');
   // Referencias secundarias desplegables durante la cocción activa
   const [showHeatGuideInCooking, setShowHeatGuideInCooking] = useState(false);
   const [showIngredientsInCooking, setShowIngredientsInCooking] = useState(false);

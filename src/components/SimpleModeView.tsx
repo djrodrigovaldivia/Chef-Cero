@@ -155,31 +155,34 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
         }),
       });
 
-      const data = await res.json();
-      if (data && data.title && data.steps && data.steps.length > 0) {
-        onSelectRecipe({
-          id: 'ai-named-' + Date.now(),
-          title: data.title,
-          description: data.description || `Receta fácil y a prueba de errores de ${nameToQuery}.`,
-          servings: data.servings || 2,
-          totalTimeMinutes: data.totalTimeMinutes || 15,
-          difficulty: data.difficulty || 'Principiante',
-          cuisine: data.cuisine || 'economica_bbb',
-          cuisineName: data.cuisineName || 'Cocina con IA',
-          countryFlag: data.countryFlag || '✨',
-          isBudgetFriendly: true,
-          estimatedCostLabel: data.estimatedCostLabel || 'Económica (<$3 USD)',
-          culturalSecret: data.culturalSecret,
-          imageUrl: data.imageUrl,
-          finishGalleryUrls: data.finishGalleryUrls,
-          finishVisualCheckpoints: data.finishVisualCheckpoints,
-          safetyAlerts: data.safetyAlerts || ['Controla el fuego', 'Pica todo antes de encender la hornalla'],
-          miseEnPlace: data.miseEnPlace || [],
-          heatGuideExplanation: data.heatGuideExplanation || 'Fuego controlado para cocinar con tranquilidad.',
-          steps: data.steps,
-        });
-        return;
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.title && data.steps && data.steps.length > 0) {
+          onSelectRecipe({
+            id: 'ai-named-' + Date.now(),
+            title: data.title,
+            description: data.description || `Receta fácil y a prueba de errores de ${nameToQuery}.`,
+            servings: data.servings || 2,
+            totalTimeMinutes: data.totalTimeMinutes || 15,
+            difficulty: data.difficulty || 'Principiante',
+            cuisine: data.cuisine || 'economica_bbb',
+            cuisineName: data.cuisineName || 'Cocina con IA',
+            countryFlag: data.countryFlag || '✨',
+            isBudgetFriendly: true,
+            estimatedCostLabel: data.estimatedCostLabel || 'Económica (<$3 USD)',
+            culturalSecret: data.culturalSecret,
+            imageUrl: data.imageUrl,
+            finishGalleryUrls: data.finishGalleryUrls,
+            finishVisualCheckpoints: data.finishVisualCheckpoints,
+            safetyAlerts: data.safetyAlerts || ['Controla el fuego', 'Pica todo antes de encender la hornalla'],
+            miseEnPlace: data.miseEnPlace || [],
+            heatGuideExplanation: data.heatGuideExplanation || 'Fuego controlado para cocinar con tranquilidad.',
+            steps: data.steps,
+          });
+          return;
+        }
       }
+      throw new Error('API offline o sin respuesta');
     } catch (err: any) {
       console.warn('Chef Cero: Servidor no respondió, activando recetario inteligente local:', err);
       // Fallback infalible: crea o busca de inmediato la receta localmente para que el usuario NUNCA se quede bloqueado

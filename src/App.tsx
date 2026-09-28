@@ -298,7 +298,6 @@ export default function App() {
                 onClearIncomingTimer={() => setIncomingTimer(null)}
                 onLearnFact={handleLearnFact}
                 externalSelectedRecipe={selectedRecipeForCooking}
-                onRecipeConsumed={() => setSelectedRecipeForCooking(null)}
                 onNavigateToAutor={() => setActiveTab('escuela')}
               />
             </div>

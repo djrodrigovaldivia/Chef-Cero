@@ -331,23 +331,22 @@ export const Navbar: React.FC<NavbarProps> = ({
       </header>
 
       {/* 4. BARRA DE NAVEGACIÓN INFERIOR FIJA PARA MÓVILES (Estilo iOS / Android Nativo) */}
-      {/* Alineada hacia la izquierda con holgura a la derecha para que ningún sello de agua externo la tape */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-3 pr-24 py-2 flex items-center justify-start gap-4 sm:gap-6 shadow-lg">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-3 pr-28 py-2 flex items-center justify-between shadow-lg">
         <button
           type="button"
           onClick={() => onSelectTab('cocinar')}
-          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition cursor-pointer ${
+          className={`flex-1 flex flex-col items-center gap-1 py-1 px-1 rounded-xl transition cursor-pointer ${
             activeTab === 'cocinar' ? 'text-amber-600 font-black' : 'text-stone-500 hover:text-stone-900 font-medium'
           }`}
         >
-          <span className="text-lg leading-none">🍳</span>
+          <span className="text-xl leading-none">🍳</span>
           <span className="text-[10px]">Cocinar</span>
         </button>
 
         <button
           type="button"
           onClick={() => onSelectTab('escaner')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition cursor-pointer ${
+          className={`flex-1 flex flex-col items-center gap-1 py-1 px-1 rounded-xl transition cursor-pointer ${
             activeTab === 'escaner' ? 'text-emerald-600 font-black' : 'text-stone-500 hover:text-stone-900 font-medium'
           }`}
         >
@@ -357,19 +356,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         <button
           type="button"
-          onClick={onOpenVoiceAssistant}
-          className="flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-stone-900 transition cursor-pointer group"
-        >
-          <div className="w-8 h-8 rounded-full bg-amber-500 text-stone-950 flex items-center justify-center shadow-xs -mt-3 ring-2 ring-white">
-            <Mic className="w-4 h-4" />
-          </div>
-          <span className="text-[10px] font-bold">Chef</span>
-        </button>
-
-        <button
-          type="button"
           onClick={() => onSelectTab('escuela')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition cursor-pointer ${
+          className={`flex-1 flex flex-col items-center gap-1 py-1 px-1 rounded-xl transition cursor-pointer ${
             activeTab === 'escuela' ? 'text-purple-600 font-black' : 'text-stone-500 hover:text-stone-900 font-medium'
           }`}
         >
