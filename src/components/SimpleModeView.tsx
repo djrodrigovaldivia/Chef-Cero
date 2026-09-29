@@ -1,11 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Sparkles, Mic, Clock, Flame, AlertTriangle, ChevronRight, Check, ChefHat, 
-  Camera, Search, X, ArrowRight, RefreshCw, BookOpen, Utensils
+  Camera, Search, X, ArrowRight, RefreshCw, BookOpen, Utensils, Calendar,
+  Globe, Compass, CheckCircle2, Plus, MapPin
 } from 'lucide-react';
-import { Recipe, UserProfile } from '../types';
-import { STARTER_RECIPES } from '../data/recipeData';
+import { Recipe, UserProfile, WorldCuisineId } from '../types';
+import { STARTER_RECIPES, WORLD_CUISINES } from '../data/recipeData';
+import { WORLD_COUNTRIES } from '../data/worldCountries';
+import { getCachedWorldCuisine, saveCachedWorldCuisine } from '../utils/worldRecipeCache';
 import { generateLocalRecipeFallback } from '../utils/recipeGeneratorFallback';
+import { WorldAtlasModal } from './WorldAtlasModal';
 
 interface SimpleModeViewProps {
   userProfile: UserProfile;
@@ -41,13 +45,21 @@ const COMMON_PANTRY: CommonIngredient[] = [
   { id: 'leche', name: 'Leche', emoji: '🥛', category: 'frescos' },
 ];
 
-const POPULAR_IDEAS = [
-  'Tortilla de patatas',
-  'Lasaña fácil',
-  'Arroz chaufa',
-  'Pasta alfredo',
-  'Pollo al limón',
-  'Sopa de pollo casera',
+// Países destacados en la barra rápida
+const POPULAR_QUICK_COUNTRIES = [
+  { name: 'Todas', flag: '🌍', continent: 'Mundial' },
+  { name: 'Chile', flag: '🇨🇱', continent: 'América del Sur', cuisineId: 'chilena_criolla' },
+  { name: 'Italia', flag: '🇮🇹', continent: 'Europa', cuisineId: 'italiana' },
+  { name: 'Perú', flag: '🇵🇪', continent: 'América del Sur', cuisineId: 'peruana' },
+  { name: 'México', flag: '🇲🇽', continent: 'Centro & Norteamérica', cuisineId: 'mexicana' },
+  { name: 'Argentina', flag: '🇦🇷', continent: 'América del Sur' },
+  { name: 'Tailandia', flag: '🇹🇭', continent: 'Asia' },
+  { name: 'España', flag: '🇪🇸', continent: 'Europa', cuisineId: 'espanola' },
+  { name: 'Francia', flag: '🇫🇷', continent: 'Europa', cuisineId: 'francesa' },
+  { name: 'Japón', flag: '🇯🇵', continent: 'Asia' },
+  { name: 'China', flag: '🇨🇳', continent: 'Asia', cuisineId: 'asiatica' },
+  { name: 'Estados Unidos', flag: '🇺🇸', continent: 'Centro & Norteamérica', cuisineId: 'americana' },
+  { name: 'Económicas BBB', flag: '💰', continent: 'Mundial', cuisineId: 'economica_bbb' },
 ];
 
 export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
@@ -61,13 +73,135 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
   onOpenMealPlanner,
   onOpenRecipeImport,
 }) => {
-  // 1. Búsqueda y Generación Directa por Nombre de Receta (Escribir o Decir por Voz)
+  // 1. Selector Maestro de Modo: "Explorar Cocinas del Mundo" vs "Cocinar con mi Despensa"
+  const [activeMainMode, setActiveMainMode] = useState<'cocinas' | 'despensa'>('cocinas');
+
+  // 2. País / Gastronomía Activa (Pasaporte Gastronómico)
+  const [activeCountry, setActiveCountry] = useState<{
+    name: string;
+    flag: string;
+    continent: string;
+    tagline?: string;
+    goldenRule?: string;
+  }>({
+    name: 'Todas',
+    flag: '🌍',
+    continent: 'Mundial',
+    tagline: 'Recetas sin misterio ni quemaduras para principiantes',
+    goldenRule: 'Mise en place estricto: ten todo cortado y medido antes de encender el fuego.',
+  });
+
+  // Modal Atlas Mundial
+  const [isAtlasOpen, setIsAtlasOpen] = useState(false);
+
+  // Recetas dinámicas descubiertas por país (almacenadas en estado + sincronizadas con localStorage)
+  const [dynamicWorldRecipes, setDynamicWorldRecipes] = useState<Record<string, Recipe[]>>({});
+  const [isLoadingCountryDishes, setIsLoadingCountryDishes] = useState(false);
+  const [countryLoadError, setCountryLoadError] = useState<string | null>(null);
+
+  // 3. Búsqueda y Generación Directa por Nombre de Receta
   const [recipeNameInput, setRecipeNameInput] = useState('');
   const [isGeneratingByName, setIsGeneratingByName] = useState(false);
   const [isListeningSpeech, setIsListeningSpeech] = useState(false);
   const [nameGenError, setNameGenError] = useState<string | null>(null);
 
-  // Dictar nombre de plato con reconocimiento de voz en el navegador
+  // 4. Selección táctil de despensa
+  const [selectedIngredientIds, setSelectedIngredientIds] = useState<string[]>([]);
+  const [customInput, setCustomInput] = useState('');
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'todos' | 'basicos' | 'frescos' | 'despensa'>('todos');
+
+  // Cargar recetas de la caché local cuando cambia el país
+  useEffect(() => {
+    if (activeCountry.name === 'Todas') return;
+
+    const cached = getCachedWorldCuisine(activeCountry.name);
+    if (cached && cached.recipes.length > 0) {
+      setDynamicWorldRecipes((prev) => ({
+        ...prev,
+        [activeCountry.name.toLowerCase()]: cached.recipes,
+      }));
+      if (cached.tagline && !activeCountry.tagline) {
+        setActiveCountry((prev) => ({
+          ...prev,
+          tagline: cached.tagline,
+          goldenRule: cached.goldenRule,
+        }));
+      }
+    } else {
+      // Si no hay recetas en caché ni en starter_recipes para este país, pedirlas automáticamente
+      const starterMatches = STARTER_RECIPES.filter(
+        (r) => r.cuisineName?.toLowerCase().includes(activeCountry.name.toLowerCase())
+      );
+      if (starterMatches.length === 0) {
+        fetchMoreDishesForCountry(activeCountry.name, activeCountry.flag, activeCountry.continent, []);
+      }
+    }
+  }, [activeCountry.name]);
+
+  // Función para obtener más recetas del país vía /api/recipe/world-catalog
+  const fetchMoreDishesForCountry = async (
+    countryName: string,
+    flag: string,
+    continent: string,
+    currentExcludeTitles: string[]
+  ) => {
+    setIsLoadingCountryDishes(true);
+    setCountryLoadError(null);
+
+    try {
+      const res = await fetch('/api/recipe/world-catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          countryName,
+          flag,
+          continent,
+          userLevel: userProfile.level || 1,
+          count: 3,
+          excludeTitles: currentExcludeTitles,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.recipes && data.recipes.length > 0) {
+          const key = countryName.toLowerCase();
+          const existing = dynamicWorldRecipes[key] || [];
+          const combined = [...existing, ...data.recipes];
+
+          setDynamicWorldRecipes((prev) => ({
+            ...prev,
+            [key]: combined,
+          }));
+
+          saveCachedWorldCuisine({
+            countryName,
+            flag: data.flag || flag,
+            tagline: data.tagline || `Auténticos platos caseros de ${countryName}.`,
+            goldenRule: data.goldenRule || 'Respetar los tiempos y cocinar a fuego controlado.',
+            recipes: combined,
+            lastUpdated: Date.now(),
+          });
+
+          setActiveCountry((prev) => ({
+            ...prev,
+            tagline: data.tagline || prev.tagline,
+            goldenRule: data.goldenRule || prev.goldenRule,
+          }));
+          return;
+        }
+      }
+      throw new Error('No se pudieron obtener más platos');
+    } catch (err: any) {
+      console.warn('Chef Cero: Error cargando platos de país:', err);
+      setCountryLoadError('No se pudieron cargar nuevos platos en este momento. Revisa tu conexión.');
+    } finally {
+      setIsLoadingCountryDishes(false);
+    }
+  };
+
+  // Dictado por voz en el buscador
   const startVoiceSearch = () => {
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRec) {
@@ -102,12 +236,6 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
       onOpenVoice();
     }
   };
-
-  // 2. Selección táctil instantánea de despensa
-  const [selectedIngredientIds, setSelectedIngredientIds] = useState<string[]>(['huevos', 'arroz']);
-  const [customInput, setCustomInput] = useState('');
-  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'todos' | 'basicos' | 'frescos' | 'despensa'>('todos');
 
   // Toggle de ingrediente táctil
   const toggleIngredient = (id: string) => {
@@ -148,6 +276,7 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipeName: nameToQuery,
+          cuisine: activeCountry.name !== 'Todas' ? activeCountry.name : undefined,
           userProfile: {
             levelTitle: userProfile.levelTitle,
             pastMistakes: userProfile.pastMistakes,
@@ -166,8 +295,8 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
             totalTimeMinutes: data.totalTimeMinutes || 15,
             difficulty: data.difficulty || 'Principiante',
             cuisine: data.cuisine || 'economica_bbb',
-            cuisineName: data.cuisineName || 'Cocina con IA',
-            countryFlag: data.countryFlag || '✨',
+            cuisineName: data.cuisineName || activeCountry.name,
+            countryFlag: data.countryFlag || activeCountry.flag || '✨',
             isBudgetFriendly: true,
             estimatedCostLabel: data.estimatedCostLabel || 'Económica (<$3 USD)',
             culturalSecret: data.culturalSecret,
@@ -182,26 +311,71 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
           return;
         }
       }
-      throw new Error('API offline o sin respuesta');
+      throw new Error('API offline');
     } catch (err: any) {
-      console.warn('Chef Cero: Servidor no respondió, activando recetario inteligente local:', err);
-      // Fallback infalible: crea o busca de inmediato la receta localmente para que el usuario NUNCA se quede bloqueado
+      console.warn('Chef Cero: Servidor no respondió, usando recetario inteligente local:', err);
       try {
         const fallbackRecipe = generateLocalRecipeFallback(nameToQuery, userProfile.levelTitle);
         onSelectRecipe(fallbackRecipe);
         return;
       } catch (fallbackErr) {
-        setNameGenError('No pudimos conectar con el asistente. Inténtalo de nuevo o elige una receta de la lista.');
+        setNameGenError('No se pudo conectar con el asistente. Elige una de las recetas recomendadas abajo.');
       }
     } finally {
       setIsGeneratingByName(false);
     }
   };
 
-  // Motor de Matching Instantáneo con ingredientes seleccionados
+  // Recetas dinámicas a mostrar según el país activo
+  const displayedCountryRecipes = useMemo(() => {
+    if (activeCountry.name === 'Todas') {
+      return STARTER_RECIPES.slice(0, 8);
+    }
+
+    const key = activeCountry.name.toLowerCase();
+    const dynamic = dynamicWorldRecipes[key] || [];
+
+    // Mapear países comunes a las recetas iniciales
+    let matchedStarters: Recipe[] = [];
+    if (activeCountry.name === 'Chile') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'chilena_criolla');
+    } else if (activeCountry.name === 'Italia') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'italiana');
+    } else if (activeCountry.name === 'Perú') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'peruana');
+    } else if (activeCountry.name === 'México') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'mexicana');
+    } else if (activeCountry.name === 'España') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'espanola');
+    } else if (activeCountry.name === 'Francia') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'francesa');
+    } else if (activeCountry.name === 'Estados Unidos') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'americana');
+    } else if (activeCountry.name === 'China' || activeCountry.name === 'Asiática') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'asiatica');
+    } else if (activeCountry.name === 'Económicas BBB') {
+      matchedStarters = STARTER_RECIPES.filter((r) => r.cuisine === 'economica_bbb');
+    }
+
+    // Combinar sin duplicados por ID o título
+    const seenTitles = new Set<string>();
+    const combined: Recipe[] = [];
+
+    [...matchedStarters, ...dynamic].forEach((recipe) => {
+      const cleanTitle = recipe.title.toLowerCase().trim();
+      if (!seenTitles.has(cleanTitle)) {
+        seenTitles.add(cleanTitle);
+        combined.push(recipe);
+      }
+    });
+
+    return combined.length > 0 ? combined : STARTER_RECIPES.slice(0, 4);
+  }, [activeCountry.name, dynamicWorldRecipes]);
+
+  // Motor de Matching con la despensa
   const matchedRecipes = useMemo(() => {
     if (selectedIngredientIds.length === 0) {
-      return STARTER_RECIPES.slice(0, 4).map((r) => ({
+      return STARTER_RECIPES.slice(0, 6).map((r) => ({
         recipe: r,
         matchCount: 0,
         matchPercentage: 100,
@@ -232,13 +406,10 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
     .slice(0, 6);
   }, [selectedIngredientIds]);
 
-  // Generador de receta por IA ultra-directo con los ingredientes seleccionados
+  // Generador de receta por IA con ingredientes de despensa
   const handleAiQuickResolve = async () => {
     const list = selectedIngredientIds.join(', ');
-    if (!list) {
-      onOpenVoice();
-      return;
-    }
+    if (!list) return;
 
     setIsGeneratingAi(true);
     try {
@@ -247,7 +418,7 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ingredients: list,
-          cuisine: 'economica_bbb',
+          cuisine: activeCountry.name !== 'Todas' ? activeCountry.name : 'economica_bbb',
           budgetFocus: true,
           userProfile: {
             levelTitle: userProfile.levelTitle,
@@ -265,8 +436,8 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
           totalTimeMinutes: data.totalTimeMinutes || 12,
           difficulty: 'Principiante Total',
           cuisine: 'economica_bbb',
-          cuisineName: 'Cocina Simple & Rápida',
-          countryFlag: '🍳',
+          cuisineName: activeCountry.name !== 'Todas' ? activeCountry.name : 'Cocina Simple & Rápida',
+          countryFlag: activeCountry.flag || '🍳',
           isBudgetFriendly: true,
           imageUrl: data.imageUrl,
           finishGalleryUrls: data.finishGalleryUrls,
@@ -279,7 +450,6 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
         return;
       }
     } catch {
-      // Fallback a primera receta coincidente
       if (matchedRecipes.length > 0) {
         onSelectRecipe(matchedRecipes[0].recipe);
       }
@@ -294,41 +464,42 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
   });
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 animate-fade-in pb-20 px-3 sm:px-4">
+    <div className="max-w-4xl mx-auto space-y-3.5 sm:space-y-6 animate-fade-in pb-16 px-2.5 sm:px-4">
       
-      {/* 1. HERO PRINCIPAL: "LA REGLA DE LOS 3 SEGUNDOS" */}
-      <section className="text-center pt-2 sm:pt-4 space-y-3">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-100 text-amber-950 text-xs font-bold border border-amber-300 shadow-2xs">
-          <span>🍳</span>
-          <span>Chef Cero • Cocina fácil paso a paso sin quemar nada</span>
-        </div>
-        
-        <h1 className="text-3xl sm:text-5xl font-black text-stone-900 tracking-tight font-serif">
-          ¿Qué te gustaría cocinar hoy?
+      {/* 1. HERO COMPACTO Y CÁLIDO (Optimizado para pliegue móvil 375px) */}
+      <section className="text-center pt-0.5 sm:pt-2 space-y-1 sm:space-y-1.5">
+        <h1 className="text-xl sm:text-3xl font-black text-stone-900 tracking-tight font-serif leading-tight">
+          ¿Qué cocinamos hoy?
         </h1>
-        <p className="text-sm sm:text-base text-stone-600 max-w-xl mx-auto leading-relaxed">
-          Escribe el nombre del plato que se te antoje o toca lo que tienes en casa. Te guiaremos paso a paso para que no se queme.
+        <p className="text-[11px] sm:text-xs text-stone-500 max-w-sm sm:max-w-lg mx-auto leading-snug">
+          Pide cualquier plato o viaja por más de 190 países con fotos apetitosas y técnica a prueba de errores.
         </p>
 
-        {/* 2. BUSCADOR INTELIGENTE CON IA: "PIDE CUALQUIER RECETA POR SU NOMBRE" */}
-        <div className="max-w-2xl mx-auto pt-2">
+        {/* 2. BUSCADOR OMNICANAL EN LÍNEA ÚNICA (Cero scroll en 375px) */}
+        <div className="max-w-2xl mx-auto pt-0.5 sm:pt-1">
           <form 
             onSubmit={(e) => {
               e.preventDefault();
               handleGenerateByName();
             }}
-            className="bg-white p-2 rounded-2xl border-2 border-amber-400 shadow-md flex flex-col sm:flex-row gap-2 transition focus-within:ring-4 focus-within:ring-amber-200"
+            className="bg-white p-1 sm:p-1.5 rounded-2xl border border-stone-200 shadow-2xs flex flex-row items-center gap-1.5 sm:gap-2 transition focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-200/50"
           >
-            <div className="relative flex-1 flex items-center">
-              <Search className="w-5 h-5 text-amber-500 ml-3 shrink-0" />
+            <div className="relative flex-1 flex items-center min-w-0">
+              <Search className="w-4 h-4 sm:w-5 sm:h-5 text-stone-400 ml-2.5 sm:ml-3 shrink-0" />
               <input
                 type="text"
                 value={recipeNameInput}
                 onChange={(e) => setRecipeNameInput(e.target.value)}
-                placeholder={isListeningSpeech ? "Escuchando... di el nombre del plato..." : "Escribe o di cualquier plato (ej: Lasaña fácil, Tortilla de patatas...)"}
-                className={`w-full pl-3 pr-20 py-2.5 text-sm sm:text-base font-medium text-stone-900 placeholder:text-stone-400 focus:outline-none bg-transparent ${isListeningSpeech ? 'text-amber-800 placeholder:text-amber-700 animate-pulse' : ''}`}
+                placeholder={
+                  isListeningSpeech 
+                    ? "Escuchando... di cualquier plato..." 
+                    : activeCountry.name !== 'Todas' 
+                      ? `Plato de ${activeCountry.name} o pedir receta...`
+                      : "Escribe plato (ej: Tomaticán, Carbonara...)"
+                }
+                className={`w-full pl-2 sm:pl-3 pr-16 sm:pr-20 py-1.5 sm:py-2 text-xs sm:text-base font-medium text-stone-900 placeholder:text-stone-400 focus:outline-none bg-transparent truncate ${isListeningSpeech ? 'text-amber-800 placeholder:text-amber-700 animate-pulse' : ''}`}
               />
-              <div className="absolute right-2 flex items-center gap-1">
+              <div className="absolute right-1.5 sm:right-2 flex items-center gap-0.5 sm:gap-1">
                 {recipeNameInput && (
                   <button
                     type="button"
@@ -336,20 +507,20 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
                     className="p-1 hover:bg-stone-100 rounded-full text-stone-400 cursor-pointer"
                     title="Limpiar"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={startVoiceSearch}
-                  className={`p-1.5 rounded-xl transition cursor-pointer flex items-center gap-1 ${
+                  className={`p-1 sm:p-1.5 rounded-xl transition cursor-pointer flex items-center gap-1 ${
                     isListeningSpeech
                       ? 'bg-rose-500 text-white animate-bounce shadow-xs ring-2 ring-rose-300'
-                      : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
+                      : 'text-stone-400 hover:text-stone-800 hover:bg-stone-100'
                   }`}
-                  title="Dictar nombre del plato por voz"
+                  title="Dictar plato por voz"
                 >
-                  <Mic className="w-4 h-4" />
+                  <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               </div>
             </div>
@@ -357,351 +528,578 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
             <button
               type="submit"
               disabled={!recipeNameInput.trim() || isGeneratingByName}
-              className="px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-stone-950 font-black text-sm flex items-center justify-center gap-2 shadow-xs transition active:scale-98 cursor-pointer shrink-0"
+              className="px-3 sm:px-5 py-1.5 sm:py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-stone-950 font-black text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 shadow-2xs transition active:scale-98 cursor-pointer shrink-0"
             >
               {isGeneratingByName ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-stone-950" />
-                  <span>Creando receta con IA...</span>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-stone-950" />
+                  <span className="hidden xs:inline">Cocinando...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 text-stone-950 fill-stone-950" />
-                  <span>Cocinar con IA</span>
+                  <span className="hidden xs:inline">Cocinar</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </>
               )}
             </button>
           </form>
 
           {nameGenError && (
-            <p className="text-xs text-rose-600 font-bold mt-2 text-center">
+            <p className="text-[11px] text-rose-600 font-bold mt-1 text-center">
               {nameGenError}
             </p>
           )}
 
-          {/* Sugerencias rápidas en 1 clic */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2.5 text-xs text-stone-600">
-            <span className="font-semibold text-stone-400 mr-1 text-[11px]">Ideas rápidas:</span>
-            {POPULAR_IDEAS.map((idea) => (
+          {/* 3. ACCESO DIRECTO AL INSPECTOR CON FOTO (COMPACTO) */}
+          <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1.5 sm:pt-2.5 text-[11px] sm:text-xs">
+            {onOpenScanner && (
               <button
-                key={idea}
                 type="button"
-                onClick={() => {
-                  setRecipeNameInput(idea);
-                  handleGenerateByName(idea);
-                }}
-                className="px-2.5 py-1 rounded-full bg-stone-100 hover:bg-amber-100 text-stone-700 hover:text-amber-950 text-xs font-semibold transition cursor-pointer border border-stone-200"
+                onClick={() => onOpenScanner('inspect_product')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50/60 border border-emerald-300/80 text-emerald-950 font-bold shadow-2xs transition hover:border-emerald-400 cursor-pointer group"
               >
-                {idea}
+                <Camera className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition-transform" />
+                <span className="truncate">Foto a mi heladera o producto</span>
+                <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-semibold">Cámara</span>
               </button>
-            ))}
+            )}
 
             {onOpenRecipeImport && (
               <button
                 type="button"
                 onClick={onOpenRecipeImport}
-                className="px-2.5 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-black transition cursor-pointer border border-amber-300 flex items-center gap-1 shadow-2xs"
-                title="Pegar texto de un blog o enlace y limpiarlo al instante"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white hover:bg-stone-50 border border-stone-200 text-stone-600 hover:text-stone-900 font-medium transition cursor-pointer"
+                title="Pegar enlace de blog o texto"
               >
                 <span>📋</span>
-                <span>Importar Receta (Pegar de Blog o Web)</span>
+                <span className="hidden sm:inline">Importar de web</span>
               </button>
             )}
           </div>
         </div>
       </section>
 
-      {/* 3. TRES BOTONES DE ACCIÓN RÁPIDA: VOZ, NEVERA Y S.O.S. */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <button
-          type="button"
-          onClick={onOpenVoice}
-          className="p-4 rounded-2xl bg-amber-500 hover:bg-amber-600 text-stone-950 font-bold text-sm flex items-center justify-center gap-2.5 shadow-sm transition active:scale-98 cursor-pointer"
-        >
-          <Mic className="w-5 h-5 text-stone-950" />
-          <span>Preguntar al Chef por Voz</span>
-        </button>
-
-        {onOpenScanner && (
+      {/* 4. SELECTOR MAESTRO DE MODO (DOS MODELOS MENTALES CLAROS) */}
+      <div className="flex justify-center pt-0.5 sm:pt-1">
+        <div className="p-0.5 sm:p-1 bg-stone-200/80 rounded-2xl flex items-center gap-1 w-full max-w-md shadow-inner">
           <button
             type="button"
-            onClick={() => onOpenScanner('inspect_product')}
-            className="p-4 rounded-2xl bg-white hover:bg-stone-50 border border-emerald-300 text-stone-800 font-bold text-sm flex items-center justify-center gap-2.5 shadow-2xs transition active:scale-98 cursor-pointer ring-1 ring-emerald-400/30"
+            onClick={() => setActiveMainMode('cocinas')}
+            className={`flex-1 py-1.5 sm:py-2.5 px-2.5 sm:px-3 rounded-xl text-[11px] sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeMainMode === 'cocinas'
+                ? 'bg-white text-stone-900 shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
           >
-            <Camera className="w-5 h-5 text-emerald-600" />
-            <div className="text-left">
-              <span className="block text-xs font-black text-stone-900 leading-tight">Inspector con Foto</span>
-              <span className="text-[10px] text-emerald-700 font-semibold">¿Está bueno? ¿Qué preparo?</span>
-            </div>
+            <span>🌍</span>
+            <span>Pasaporte Gastronómico</span>
           </button>
-        )}
 
-        <button
-          type="button"
-          onClick={onOpenEmergency}
-          className="p-4 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 font-bold text-sm flex items-center justify-center gap-2.5 shadow-2xs transition active:scale-98 cursor-pointer"
-        >
-          <AlertTriangle className="w-5 h-5 text-rose-600" />
-          <span>S.O.S. (¡Se quema la comida!)</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveMainMode('despensa')}
+            className={`flex-1 py-1.5 sm:py-2.5 px-2.5 sm:px-3 rounded-xl text-[11px] sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeMainMode === 'despensa'
+                ? 'bg-white text-stone-900 shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <span>🥫</span>
+            <span>Mi despensa</span>
+            {selectedIngredientIds.length > 0 && (
+              <span className="w-4 h-4 rounded-full bg-amber-500 text-stone-950 text-[9px] font-black flex items-center justify-center">
+                {selectedIngredientIds.length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* 4. SELECTOR TÁCTIL DE INGREDIENTES: "¿QUÉ TIENES EN CASA?" */}
-      <section className="bg-white rounded-3xl p-5 sm:p-6 border border-stone-200 shadow-sm space-y-4">
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
-          <div>
-            <h2 className="text-base sm:text-lg font-black text-stone-900 font-serif flex items-center gap-2">
-              <span>🥣</span>
-              <span>O toca lo que tienes en tu cocina:</span>
-            </h2>
-            <p className="text-xs text-stone-500">
-              Marca 1 o 2 ingredientes para ver platos rápidos sin salir al supermercado.
-            </p>
-          </div>
-
-          {selectedIngredientIds.length > 0 && (
-            <button
-              type="button"
-              onClick={clearAllIngredients}
-              className="text-xs font-bold text-stone-400 hover:text-stone-700 transition cursor-pointer self-start sm:self-auto"
-            >
-              Limpiar selección
-            </button>
-          )}
-        </div>
-
-        {/* Ingredientes marcados */}
-        {selectedIngredientIds.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 p-3 rounded-2xl bg-amber-50/70 border border-amber-200">
-            {selectedIngredientIds.map((id) => {
-              const matched = COMMON_PANTRY.find((c) => c.id === id);
-              return (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500 text-stone-950 font-bold text-xs rounded-xl shadow-2xs animate-fade-in"
-                >
-                  <span>{matched ? matched.emoji : '🥣'}</span>
-                  <span className="capitalize">{matched ? matched.name : id}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeIngredient(id)}
-                    className="p-0.5 hover:bg-black/15 rounded-full transition ml-0.5 cursor-pointer"
-                    title="Eliminar"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Filtros de Categoría */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
-          {(['todos', 'basicos', 'frescos', 'despensa'] as const).map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setSelectedCategoryFilter(cat)}
-              className={`px-3 py-1.5 rounded-xl font-bold transition capitalize shrink-0 cursor-pointer ${
-                selectedCategoryFilter === cat
-                  ? 'bg-stone-900 text-white shadow-2xs'
-                  : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-              }`}
-            >
-              {cat === 'todos' ? '✨ Todos' : cat === 'basicos' ? '🥚 Básicos' : cat === 'frescos' ? '🍅 Frescos' : '🥫 Despensa'}
-            </button>
-          ))}
-        </div>
-
-        {/* Grilla de ingredientes táctiles */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {filteredPantry.map((item) => {
-            const isSelected = selectedIngredientIds.includes(item.id);
-            return (
+      {/* 5A. MODO PASAPORTE GASTRONÓMICO MUNDIAL (CATÁLOGO INFINITO DE RECETAS) */}
+      {activeMainMode === 'cocinas' && (
+        <div className="space-y-3 sm:space-y-6 animate-fade-in">
+          
+          {/* BARRA HORIZONTAL ELEGANTE DE PAÍSES + BOTÓN ATLAS MUNDIAL 190+ */}
+          <div className="space-y-1.5 sm:space-y-2.5">
+            <div className="flex items-center justify-between text-xs px-1">
+              <span className="font-bold text-stone-500 uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-1.5">
+                <Globe className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600" />
+                <span>Explorar país gastronómico:</span>
+              </span>
+              
               <button
-                key={item.id}
                 type="button"
-                onClick={() => toggleIngredient(item.id)}
-                className={`p-3 rounded-2xl border text-left transition flex items-center justify-between gap-2 cursor-pointer select-none active:scale-97 ${
-                  isSelected
-                    ? 'bg-amber-100/90 border-amber-400 text-amber-950 font-black shadow-2xs ring-2 ring-amber-300/40'
-                    : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-700 font-medium'
-                }`}
+                onClick={() => setIsAtlasOpen(true)}
+                className="text-[11px] sm:text-xs font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1 hover:underline cursor-pointer"
               >
-                <div className="flex items-center gap-2 truncate">
-                  <span className="text-xl leading-none">{item.emoji}</span>
-                  <span className="text-xs truncate">{item.name}</span>
-                </div>
-                {isSelected && (
-                  <div className="w-4 h-4 rounded-full bg-amber-500 text-stone-950 flex items-center justify-center shrink-0">
-                    <Check className="w-2.5 h-2.5 stroke-[3]" />
-                  </div>
-                )}
+                <span>Atlas de 190+ Países</span>
+                <ChevronRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
-            );
-          })}
-        </div>
+            </div>
 
-        {/* Input para agregar otro ingrediente personalizado */}
-        <form onSubmit={addCustomIngredient} className="flex gap-2 pt-1">
-          <input
-            type="text"
-            value={customInput}
-            onChange={(e) => setCustomInput(e.target.value)}
-            placeholder="¿Tienes otro ingrediente? (ej: zanahoria, mantequilla, carne...)"
-            className="flex-1 pl-3.5 pr-4 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-xs text-stone-900 placeholder:text-stone-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-          />
-          <button
-            type="submit"
-            disabled={!customInput.trim()}
-            className="px-4 py-2.5 bg-stone-800 hover:bg-stone-900 disabled:opacity-40 text-white font-bold text-xs rounded-xl transition cursor-pointer shrink-0"
-          >
-            + Agregar
-          </button>
-        </form>
-      </section>
+            {/* Chips de Países Rápidos + Botón del Atlas */}
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1.5 scrollbar-none">
+              
+              {/* Si el país activo no está en la barra rápida, mostrarlo como primer chip */}
+              {activeCountry.name !== 'Todas' && !POPULAR_QUICK_COUNTRIES.some((c) => c.name === activeCountry.name) && (
+                <button
+                  type="button"
+                  className="px-3.5 py-2 rounded-2xl text-xs font-black transition flex items-center gap-2 shrink-0 bg-amber-500 text-stone-950 shadow-xs ring-2 ring-amber-400/40"
+                >
+                  <span className="text-base leading-none">{activeCountry.flag}</span>
+                  <span>{activeCountry.name}</span>
+                </button>
+              )}
 
-      {/* 5. CATÁLOGO DE RECETAS RECOMENDADAS CON FOTO Y 1 CLIC PARA COCINAR */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-black text-stone-900 font-serif">
-              Recetas fáciles para cocinar ya
-            </h2>
-            <p className="text-xs text-stone-500">
-              Todas diseñadas a prueba de errores con tiempos y temperaturas exactas.
-            </p>
-          </div>
+              {POPULAR_QUICK_COUNTRIES.map((c) => {
+                const isSelected = activeCountry.name === c.name;
+                return (
+                  <button
+                    key={c.name}
+                    type="button"
+                    onClick={() => {
+                      setActiveCountry({
+                        name: c.name,
+                        flag: c.flag,
+                        continent: c.continent,
+                      });
+                    }}
+                    className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer active:scale-97 ${
+                      isSelected
+                        ? 'bg-amber-500 text-stone-950 shadow-xs ring-2 ring-amber-400/40 font-black'
+                        : 'bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 hover:border-amber-300'
+                    }`}
+                  >
+                    <span className="text-base leading-none">{c.flag}</span>
+                    <span>{c.name}</span>
+                  </button>
+                );
+              })}
 
-          <button
-            type="button"
-            onClick={handleAiQuickResolve}
-            disabled={isGeneratingAi}
-            className="text-xs font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-xl border border-amber-300 transition cursor-pointer"
-          >
-            {isGeneratingAi ? (
-              <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" />
-                <span>Creando receta...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                <span>Inventar receta con IA</span>
-              </>
-            )}
-          </button>
-        </div>
+              {/* Botón Destacado: Abrir Atlas de 190+ Países */}
+              <button
+                type="button"
+                onClick={() => setIsAtlasOpen(true)}
+                className="px-4 py-2 rounded-2xl text-xs font-black bg-stone-900 hover:bg-stone-800 text-white flex items-center gap-2 shrink-0 shadow-xs transition cursor-pointer active:scale-97"
+              >
+                <span>🗺️</span>
+                <span>+ 190 Países</span>
+              </button>
+            </div>
 
-        {/* Tarjetas Grandes y Apetitosas con Foto Real del Plato Terminado */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {matchedRecipes.map(({ recipe, matchPercentage }) => (
-            <div
-              key={recipe.id}
-              onClick={() => onSelectRecipe(recipe)}
-              className="bg-white rounded-3xl border border-stone-200 overflow-hidden hover:border-amber-400 hover:shadow-lg transition cursor-pointer flex flex-col group active:scale-[0.99]"
-            >
-              {/* Foto del Plato Terminado */}
-              <div className="relative h-44 w-full bg-stone-100 overflow-hidden">
-                <img
-                  src={recipe.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'}
-                  alt={recipe.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  loading="lazy"
-                />
-                
-                {/* Badge de tiempo y nivel */}
-                <div className="absolute top-3 left-3 flex items-center gap-2">
-                  <span className="bg-stone-900/85 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-amber-400" />
-                    <span>{recipe.totalTimeMinutes} min</span>
-                  </span>
-                  
-                  {matchPercentage === 100 && (
-                    <span className="bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs">
-                      ¡Tienes todo!
+            {/* Banner editorial con la Regla de Oro del País seleccionado */}
+            {activeCountry.name !== 'Todas' && (
+              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/90 flex items-start gap-3 text-xs animate-fade-in">
+                <span className="text-2xl leading-none mt-0.5">{activeCountry.flag}</span>
+                <div className="space-y-0.5 flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-black text-amber-950 font-serif text-sm">
+                      Gastronomía de {activeCountry.name}
+                    </h3>
+                    <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded-full">
+                      {activeCountry.continent}
                     </span>
+                  </div>
+                  {activeCountry.tagline && (
+                    <p className="text-amber-800 text-xs font-medium">
+                      {activeCountry.tagline}
+                    </p>
+                  )}
+                  {activeCountry.goldenRule && (
+                    <p className="text-stone-600 text-xs leading-relaxed pt-0.5">
+                      <strong className="text-amber-900 font-semibold">Regla de oro: </strong>
+                      {activeCountry.goldenRule}
+                    </p>
                   )}
                 </div>
-
-                <div className="absolute bottom-2 right-2 bg-stone-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-lg">
-                  {recipe.difficulty}
-                </div>
               </div>
+            )}
+          </div>
 
-              {/* Contenido de la tarjeta */}
-              <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
-                <div>
-                  <h3 className="text-base sm:text-lg font-black text-stone-900 group-hover:text-amber-800 transition line-clamp-1">
-                    {recipe.title.split('(')[0]}
-                  </h3>
-                  <p className="text-xs text-stone-600 mt-1 line-clamp-2 leading-relaxed">
-                    {recipe.description}
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
-                  <span className="text-xs text-stone-500 font-medium">
-                    {recipe.steps.length} pasos • Fuego controlado
+          {/* CATÁLOGO DE RECETAS CON FOTOS APETITOSAS Y DISEÑO PULIDO */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base sm:text-lg font-black text-stone-900 font-serif flex items-center gap-2">
+                  <span>🍽️</span>
+                  <span>
+                    {activeCountry.name === 'Todas'
+                      ? 'Recetas recomendadas del mundo'
+                      : `Platos auténticos de ${activeCountry.name}`}
                   </span>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectRecipe(recipe);
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition group-hover:shadow-xs cursor-pointer"
-                  >
-                    <span>Empezar a Cocinar</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                </h2>
+                <p className="text-xs text-stone-500">
+                  {displayedCountryRecipes.length} recetas a prueba de fuego y con sustitutos de despensa común.
+                </p>
               </div>
+
+              {activeCountry.name !== 'Todas' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentTitles = displayedCountryRecipes.map((r) => r.title);
+                    fetchMoreDishesForCountry(activeCountry.name, activeCountry.flag, activeCountry.continent, currentTitles);
+                  }}
+                  disabled={isLoadingCountryDishes}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Generar más platos únicos de este país"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingCountryDishes ? 'animate-spin text-amber-600' : 'text-amber-800'}`} />
+                  <span>{isLoadingCountryDishes ? 'Buscando...' : '+ Más platos'}</span>
+                </button>
+              )}
             </div>
-          ))}
+
+            {countryLoadError && (
+              <p className="text-xs text-rose-600 font-bold text-center bg-rose-50 p-2 rounded-xl border border-rose-200">
+                {countryLoadError}
+              </p>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {displayedCountryRecipes.map((recipe) => (
+                <div
+                  key={recipe.id}
+                  onClick={() => onSelectRecipe(recipe)}
+                  className="bg-white rounded-3xl border border-stone-200 overflow-hidden hover:border-amber-400 hover:shadow-lg transition-all duration-300 cursor-pointer flex flex-col group active:scale-[0.99]"
+                >
+                  {/* Imagen Apetitosa en 16:9 */}
+                  <div className="relative h-44 w-full bg-stone-100 overflow-hidden">
+                    <img
+                      src={recipe.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'}
+                      alt={recipe.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      loading="lazy"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.fallback) {
+                          target.dataset.fallback = 'true';
+                          target.src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80';
+                        }
+                      }}
+                    />
+                    
+                    {/* Metadata limpia sobre la foto */}
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                      <span className="bg-stone-900/85 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        <span>{recipe.totalTimeMinutes} min</span>
+                      </span>
+                      {recipe.countryFlag && (
+                        <span className="bg-stone-900/85 backdrop-blur-xs text-white text-xs px-2 py-0.5 rounded-xl shadow-xs">
+                          {recipe.countryFlag}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="absolute bottom-2.5 right-2.5 bg-stone-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-lg">
+                      {recipe.difficulty}
+                    </div>
+                  </div>
+
+                  {/* Cuerpo de la tarjeta con CTA elegante */}
+                  <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-stone-900 group-hover:text-amber-800 transition line-clamp-1 font-serif">
+                        {recipe.title.split('(')[0]}
+                      </h3>
+                      <p className="text-xs text-stone-600 mt-1 line-clamp-2 leading-relaxed">
+                        {recipe.description}
+                      </p>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-stone-100 flex items-center justify-between">
+                      <div className="text-xs text-stone-500 font-medium">
+                        <span>{recipe.steps.length} pasos</span>
+                        <span className="mx-1.5 text-stone-300">·</span>
+                        <span>{recipe.servings} porciones</span>
+                      </div>
+
+                      {/* CTA sutil y armónico */}
+                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all">
+                        <span>Cocinar receta</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* BOTÓN DE CATÁLOGO INFINITO: DESCUBRIR MÁS PLATOS DE ESTE PAÍS */}
+            {activeCountry.name !== 'Todas' && (
+              <div className="pt-3 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentTitles = displayedCountryRecipes.map((r) => r.title);
+                    fetchMoreDishesForCountry(activeCountry.name, activeCountry.flag, activeCountry.continent, currentTitles);
+                  }}
+                  disabled={isLoadingCountryDishes}
+                  className="px-6 py-3.5 rounded-2xl bg-white hover:bg-amber-50/70 border-2 border-amber-300 text-stone-900 font-black text-xs sm:text-sm transition-all shadow-xs hover:shadow-md cursor-pointer inline-flex items-center gap-2.5 group active:scale-98 disabled:opacity-60"
+                >
+                  {isLoadingCountryDishes ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
+                      <span>Descubriendo nuevos platos de {activeCountry.name}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-amber-500 group-hover:rotate-12 transition-transform" />
+                      <span>Descubrir más platos auténticos de {activeCountry.name}</span>
+                      <span className="text-base leading-none">{activeCountry.flag}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </section>
         </div>
-      </section>
+      )}
 
-      {/* 6. ATAJOS RÁPIDOS A HERRAMIENTAS ADICIONALES */}
-      <section className="bg-stone-50 rounded-3xl p-5 border border-stone-200">
-        <h3 className="text-xs font-black uppercase tracking-wider text-stone-500 mb-3">
-          Otras herramientas útiles de Chef Cero:
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
-          {onOpenMealPlanner && (
-            <button
-              onClick={onOpenMealPlanner}
-              className="p-3 bg-white hover:bg-stone-100 rounded-xl border border-stone-200 font-bold text-stone-800 flex items-center gap-2 transition cursor-pointer"
-            >
-              <span>📅</span>
-              <span>Menú Semanal</span>
-            </button>
-          )}
+      {/* 5B. MODO COCINAR CON MI DESPENSA (TÁCTIL) */}
+      {activeMainMode === 'despensa' && (
+        <div className="space-y-6 animate-fade-in">
+          <section className="bg-white rounded-3xl p-5 sm:p-6 border border-stone-200 shadow-sm space-y-4">
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
+              <div>
+                <h2 className="text-base sm:text-lg font-black text-stone-900 font-serif flex items-center gap-2">
+                  <span>🥣</span>
+                  <span>Toca lo que tienes en tu cocina:</span>
+                </h2>
+                <p className="text-xs text-stone-500">
+                  Selecciona uno o más ingredientes para ver platos posibles sin salir a comprar.
+                </p>
+              </div>
 
-          {onOpenTechniques && (
-            <button
-              onClick={onOpenTechniques}
-              className="p-3 bg-white hover:bg-stone-100 rounded-xl border border-stone-200 font-bold text-stone-800 flex items-center gap-2 transition cursor-pointer"
-            >
-              <span>🎬</span>
-              <span>Técnicas en Bucle</span>
-            </button>
-          )}
+              {selectedIngredientIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAllIngredients}
+                  className="text-xs font-bold text-stone-400 hover:text-stone-700 transition cursor-pointer self-start sm:self-auto"
+                >
+                  Limpiar selección
+                </button>
+              )}
+            </div>
 
-          {onOpenLeftovers && (
-            <button
-              onClick={onOpenLeftovers}
-              className="p-3 bg-white hover:bg-stone-100 rounded-xl border border-stone-200 font-bold text-stone-800 flex items-center gap-2 transition cursor-pointer"
-            >
-              <span>🧊</span>
-              <span>Rescate de Sobras</span>
-            </button>
-          )}
+            {/* Ingredientes marcados con CTA grande */}
+            {selectedIngredientIds.length > 0 ? (
+              <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedIngredientIds.map((id) => {
+                    const matched = COMMON_PANTRY.find((c) => c.id === id);
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500 text-stone-950 font-bold text-xs rounded-xl shadow-2xs animate-fade-in"
+                      >
+                        <span>{matched ? matched.emoji : '🥣'}</span>
+                        <span className="capitalize">{matched ? matched.name : id}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeIngredient(id)}
+                          className="p-0.5 hover:bg-black/15 rounded-full transition ml-0.5 cursor-pointer"
+                          title="Eliminar"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAiQuickResolve}
+                  disabled={isGeneratingAi}
+                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-stone-950 font-black text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-98 cursor-pointer"
+                >
+                  {isGeneratingAi ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-stone-950" />
+                      <span>Creando receta a tu medida...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-stone-950 fill-stone-950" />
+                      <span>Crear receta con estos {selectedIngredientIds.length} ingredientes</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="py-2.5 px-3 rounded-xl bg-stone-50 border border-dashed border-stone-200 text-xs text-stone-500 text-center">
+                Aún no has marcado ingredientes. Toca los botones de abajo para comenzar.
+              </div>
+            )}
+
+            {/* Filtros de Categoría */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+              {(['todos', 'basicos', 'frescos', 'despensa'] as const).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategoryFilter(cat)}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition capitalize shrink-0 cursor-pointer ${
+                    selectedCategoryFilter === cat
+                      ? 'bg-amber-500 text-stone-950 shadow-2xs'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                  }`}
+                >
+                  {cat === 'todos' ? '✨ Todos' : cat === 'basicos' ? '🥚 Básicos' : cat === 'frescos' ? '🍅 Frescos' : '🥫 Despensa'}
+                </button>
+              ))}
+            </div>
+
+            {/* Grilla de ingredientes táctiles */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {filteredPantry.map((item) => {
+                const isSelected = selectedIngredientIds.includes(item.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => toggleIngredient(item.id)}
+                    className={`p-3 rounded-2xl border text-left transition flex items-center justify-between gap-2 cursor-pointer select-none active:scale-97 ${
+                      isSelected
+                        ? 'bg-amber-100/90 border-amber-400 text-amber-950 font-black shadow-2xs ring-2 ring-amber-300/40'
+                        : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-700 font-medium'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="text-xl leading-none">{item.emoji}</span>
+                      <span className="text-xs truncate">{item.name}</span>
+                    </div>
+                    {isSelected && (
+                      <div className="w-4 h-4 rounded-full bg-amber-500 text-stone-950 flex items-center justify-center shrink-0">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Input para agregar ingrediente personalizado */}
+            <form onSubmit={addCustomIngredient} className="flex gap-2 pt-1">
+              <input
+                type="text"
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+                placeholder="¿Tienes otro ingrediente? (ej: zanahoria, mantequilla, carne...)"
+                className="flex-1 pl-3.5 pr-4 py-2 bg-stone-50 border border-stone-300 rounded-xl text-xs text-stone-900 placeholder:text-stone-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <button
+                type="submit"
+                disabled={!customInput.trim()}
+                className="px-4 py-2 bg-stone-800 hover:bg-stone-900 disabled:opacity-40 text-white font-bold text-xs rounded-xl transition cursor-pointer shrink-0"
+              >
+                + Agregar
+              </button>
+            </form>
+          </section>
+
+          {/* Recetas coincidentes */}
+          <section className="space-y-4">
+            <h2 className="text-base sm:text-lg font-black text-stone-900 font-serif">
+              {selectedIngredientIds.length > 0 
+                ? `Platos posibles con tus ingredientes:`
+                : `Recetas con ingredientes cotidianos:`}
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {matchedRecipes.map(({ recipe, matchCount }) => (
+                <div
+                  key={recipe.id}
+                  onClick={() => onSelectRecipe(recipe)}
+                  className="bg-white rounded-3xl border border-stone-200 overflow-hidden hover:border-amber-400 hover:shadow-md transition cursor-pointer flex flex-col group active:scale-[0.99]"
+                >
+                  <div className="relative h-40 w-full bg-stone-100 overflow-hidden">
+                    <img
+                      src={recipe.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'}
+                      alt={recipe.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.fallback) {
+                          target.dataset.fallback = 'true';
+                          target.src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80';
+                        }
+                      }}
+                    />
+                    
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                      <span className="bg-stone-900/85 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        <span>{recipe.totalTimeMinutes} min</span>
+                      </span>
+                      
+                      {selectedIngredientIds.length > 0 && matchCount > 0 && (
+                        <span className="bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs">
+                          {matchCount} coincidente{matchCount > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-stone-900 group-hover:text-amber-800 transition line-clamp-1 font-serif">
+                        {recipe.title.split('(')[0]}
+                      </h3>
+                      <p className="text-xs text-stone-600 mt-1 line-clamp-2 leading-relaxed">
+                        {recipe.description}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                      <span className="text-xs text-stone-500 font-medium">
+                        {recipe.difficulty} • {recipe.steps.length} pasos
+                      </span>
+
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-900 group-hover:text-amber-600">
+                        <span>Cocinar</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-      </section>
+      )}
+
+      {/* 6. TRANQUILIDAD Y AUXILIO: BANNER DISCRETO DE S.O.S. AL FINAL */}
+      {onOpenEmergency && (
+        <div className="pt-4 text-center">
+          <button
+            type="button"
+            onClick={onOpenEmergency}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 text-stone-600 hover:text-rose-700 text-xs font-semibold transition cursor-pointer"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+            <span>¿Ya estás cocinando y algo se pega o quema? Abrir auxilio de emergencia (S.O.S.)</span>
+          </button>
+        </div>
+      )}
+
+      {/* MODAL DEL ATLAS MUNDIAL GASTRONÓMICO (190+ PAÍSES) */}
+      <WorldAtlasModal
+        isOpen={isAtlasOpen}
+        onClose={() => setIsAtlasOpen(false)}
+        onSelectCountry={(country) => {
+          setActiveCountry({
+            name: country.name,
+            flag: country.flag,
+            continent: country.continent,
+          });
+        }}
+        currentSelectedCountryName={activeCountry.name}
+      />
 
     </div>
   );

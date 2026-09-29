@@ -10,7 +10,7 @@ import {
 import { Recipe, RecipeStep, UserProfile, ActiveTimer, WorldCuisineId, CULINARY_LEVELS, CulinaryLevel, CulinaryLevelMeta } from '../types';
 import { STARTER_RECIPES, WORLD_CUISINES } from '../data/recipeData';
 import { NOVICE_FAQS } from '../data/leftoversAndFaqData';
-import { playTimerCompletionChime, speakSpanishText } from '../utils/audioAlert';
+import { playTimerCompletionChime, playPreventiveThermalWarningChime, speakSpanishText, startLoopingTimerAlarm, stopTimerAlarmSound, stopSpeaking } from '../utils/audioAlert';
 import { useOnlineStatus } from '../utils/useOnlineStatus';
 import { useSilentMode } from '../utils/useSilentMode';
 import { scaleIngredientText, getPanServingAdvice } from '../utils/servingsScaler';
@@ -42,6 +42,10 @@ import { InteractiveInstructionText } from './InteractiveInstructionText';
 import { IngredientSubstituteDrawer } from './IngredientSubstituteDrawer';
 import { ImmersiveCookModeModal } from './ImmersiveCookModeModal';
 import { PanProcessInspectorModal } from './PanProcessInspectorModal';
+import { MultiTimerPanel } from './MultiTimerPanel';
+import { MasterclassModal } from './MasterclassModal';
+import { RecipePrintModal } from './RecipePrintModal';
+import { Printer, FileText, PlayCircle } from 'lucide-react';
 import { convertIngredientUnits, MeasurementSystem } from '../utils/unitConverter';
 import { detectAllergensInIngredients } from '../utils/allergenDetector';
 
@@ -72,7 +76,6 @@ interface CookingModeProps {
   onLearnFact?: (category: 'fuego' | 'gustos' | 'equipamiento' | 'habito' | 'fortaleza', fact: string) => void;
   externalSelectedRecipe?: Recipe | null;
   onRecipeConsumed?: () => void;
-  onNavigateToAutor?: () => void;
 }
 
 export const CookingMode: React.FC<CookingModeProps> = ({
@@ -84,7 +87,6 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   onLearnFact,
   externalSelectedRecipe,
   onRecipeConsumed,
-  onNavigateToAutor,
 }) => {
   const [recipesList, setRecipesList] = useState<Recipe[]>(STARTER_RECIPES);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe>(() => externalSelectedRecipe || STARTER_RECIPES[0]);
@@ -110,8 +112,15 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   const [customIngredientsInput, setCustomIngredientsInput] = useState('');
   const [isGeneratingRecipe, setIsGeneratingRecipe] = useState(false);
 
-  // Active timers
+  // Active timers & alarms
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
+  const [isAlarmPlaying, setIsAlarmPlaying] = useState<boolean>(false);
+
+  const handleStopAlarm = () => {
+    stopTimerAlarmSound();
+    stopSpeaking();
+    setIsAlarmPlaying(false);
+  };
 
   // Web Push Notifications state
   const [pushStatus, setPushStatus] = useState<'granted' | 'denied' | 'default' | 'unsupported'>('default');
@@ -163,6 +172,11 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   // Modal de Lista de Compras Compartible
   const [isShoppingModalOpen, setIsShoppingModalOpen] = useState(false);
   const [addedToShoppingNotice, setAddedToShoppingNotice] = useState<string | null>(null);
+
+  // Modales de Masterclass Magistral & Ficha Técnica Imprimible (Mejoras 10/10)
+  const [isMasterclassOpen, setIsMasterclassOpen] = useState(false);
+  const [masterclassTargetId, setMasterclassTargetId] = useState<string | undefined>(undefined);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   // Modo Manos Libres con Escucha Continua (Estilo SideChef)
   const [isHandsFreeActive, setIsHandsFreeActive] = useState<boolean>(false);
@@ -263,11 +277,12 @@ export const CookingMode: React.FC<CookingModeProps> = ({
   // Modo Silencioso con subtítulos accesibles
   const { isSilent, toggleSilentMode } = useSilentMode();
 
-  // Gestionar Screen Wake Lock automático
+  // Gestionar Screen Wake Lock automático: activo automáticamente en Etapas 2 y 3 (Mise y Fuegos)
   useEffect(() => {
-    const cleanup = setupWakeLockAutoRefresh(wakeLockPreferred, setWakeLockActive);
+    const isCookingActive = cookingStage === 'mise' || cookingStage === 'fuegos' || wakeLockPreferred;
+    const cleanup = setupWakeLockAutoRefresh(isCookingActive && wakeLockPreferred, setWakeLockActive);
     return cleanup;
-  }, [wakeLockPreferred]);
+  }, [cookingStage, wakeLockPreferred]);
 
   // Manejo de manos libres por voz continuo (Estilo SideChef)
   useEffect(() => {
@@ -318,8 +333,16 @@ export const CookingMode: React.FC<CookingModeProps> = ({
         speakSpanishText('Temporizadores pausados.');
       },
       onEmergency: () => {
+        // Pausar de inmediato todos los temporizadores en 0 ms
+        setActiveTimers((prev) => prev.map((t) => ({ ...t, isRunning: false })));
         setIsEmergencyModalOpen(true);
-        speakSpanishText('Abriendo menú de emergencias culinarias de inmediato.');
+        stopSpeaking();
+        stopTimerAlarmSound();
+        speakSpanishText('¡Emergencia activada! Temporizadores pausados en cero. Retira la sartén del fuego de inmediato.');
+      },
+      onSilence: () => {
+        handleStopAlarm();
+        speakSpanishText('Audio y alarmas silenciadas.');
       },
       onStatusChange: (_listening, lastWord) => {
         if (lastWord) {
@@ -371,9 +394,15 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       } else if (action === 'pause') {
         setActiveTimers((prev) => prev.map((t) => ({ ...t, isRunning: false })));
         speakSpanishText('Temporizadores pausados.');
+      } else if (action === 'silence') {
+        handleStopAlarm();
+        speakSpanishText('Silencio activado.');
       } else if (action === 'emergency') {
+        setActiveTimers((prev) => prev.map((t) => ({ ...t, isRunning: false })));
         setIsEmergencyModalOpen(true);
-        speakSpanishText('Abriendo menú de emergencias culinarias de inmediato.');
+        stopSpeaking();
+        stopTimerAlarmSound();
+        speakSpanishText('¡Emergencia activada! Temporizadores pausados en cero. Retira la sartén del fuego de inmediato.');
       }
     };
 
@@ -451,12 +480,13 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           }
 
           if (remaining === 30 && timer.totalSeconds > 35) {
-            playTimerCompletionChime();
-            speakSpanishText(`¡Atención! Faltan 30 segundos en ${timer.label}. Acércate a la hornalla con la espátula.`);
+            playPreventiveThermalWarningChime();
+            speakSpanishText('Atención: faltan 30 segundos, prepárate para retirar o apagar el fuego.');
           }
 
           if (remaining <= 0) {
-            playTimerCompletionChime();
+            startLoopingTimerAlarm(timer.label);
+            setIsAlarmPlaying(true);
             speakSpanishText(`¡Tiempo cumplido para: ${timer.label}! Revisa tu cocina.`);
             sendTimerAlertNotification(timer.label, selectedRecipe.title);
             showLocalNotification(
@@ -946,12 +976,19 @@ export const CookingMode: React.FC<CookingModeProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Dynamic Island Flotante de Temporizadores Múltiples */}
+      {/* Dynamic Island Flotante de Temporizadores Múltiples (Head-Up Display) */}
       <FloatingTimerIsland
         activeTimers={activeTimers}
         onTogglePause={toggleTimerPause}
-        onRemoveTimer={removeTimer}
+        onRemoveTimer={(id) => {
+          removeTimer(id);
+          if (activeTimers.length <= 1) {
+            handleStopAlarm();
+          }
+        }}
         onResetTimer={resetTimer}
+        onStopAlarm={handleStopAlarm}
+        isAlarmPlaying={isAlarmPlaying}
       />
 
       {/* Selector Principal de Etapas (Flujo Claro y Sin Caos Visual) */}
@@ -1085,24 +1122,16 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {onNavigateToAutor && (
-                  <button
-                    onClick={onNavigateToAutor}
-                    className="px-3.5 py-3 bg-gradient-to-r from-purple-800 to-indigo-900 hover:from-purple-900 hover:to-indigo-950 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer ring-2 ring-purple-400/40"
-                    title="Ir a la sección de Recetas de Autor generadas con IA"
-                  >
-                    <Sparkles className="w-4 h-4 text-amber-300" />
-                    <span>Taller de Autor (IA)</span>
-                  </button>
-                )}
-
                 <button
-                  onClick={() => setLevelFilter(5)}
-                  className="px-3.5 py-3 bg-stone-900 hover:bg-stone-800 text-amber-300 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer border border-amber-500/30"
-                  title="Acceso directo a recetas únicas de alta cocina para expertos"
+                  onClick={() => {
+                    setMasterclassTargetId(undefined);
+                    setIsMasterclassOpen(true);
+                  }}
+                  className="px-3.5 py-3 bg-gradient-to-r from-stone-900 to-amber-950 hover:to-amber-900 text-amber-300 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer border border-amber-500/40"
+                  title="Aprende técnicas con micro-videos cinematográficos y chefs Michelin"
                 >
-                  <span>👑</span>
-                  <span>Recetario N5</span>
+                  <PlayCircle className="w-4 h-4 text-amber-400" />
+                  <span>Cátedra & Masterclasses</span>
                 </button>
 
                 <button
@@ -1348,6 +1377,13 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                 alt={selectedRecipe.title}
                 className="w-full h-full object-cover opacity-90"
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.dataset.fallback) {
+                    target.dataset.fallback = 'true';
+                    target.src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80';
+                  }
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/50 to-transparent flex items-end p-5 sm:p-7">
                 <div className="space-y-1.5 w-full">
@@ -1357,20 +1393,11 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                     </div>
                   )}
                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
-                      (selectedRecipe.requiredLevel || 1) <= userProfile.level
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-amber-400 text-stone-950'
-                    }`}>
-                      {(selectedRecipe.requiredLevel || 1) <= userProfile.level
-                        ? `🌱 Nivel ${selectedRecipe.requiredLevel || 1} (Desbloqueado)`
-                        : `🔒 Nivel ${selectedRecipe.requiredLevel || 1} (Desafío)`}
-                    </span>
-                    <span className="text-xs bg-stone-900/90 text-amber-200 px-2.5 py-0.5 rounded-full font-bold border border-amber-500/30">
+                    <span className="text-xs bg-stone-900/90 text-amber-200 px-3 py-1 rounded-full font-bold border border-amber-500/30">
                       {selectedRecipe.difficulty}
                     </span>
-                    <span className="text-xs bg-white/20 text-white backdrop-blur-xs px-2.5 py-0.5 rounded-full font-semibold">
-                      {selectedRecipe.steps.length} pasos
+                    <span className="text-xs bg-white/20 text-white backdrop-blur-xs px-2.5 py-1 rounded-full font-semibold">
+                      {selectedRecipe.steps.length} pasos sencillos
                     </span>
                   </div>
                   <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white font-serif tracking-tight leading-tight">
@@ -1465,40 +1492,57 @@ export const CookingMode: React.FC<CookingModeProps> = ({
 
               {/* Portion Scaler & Unit Converter (Gramos vs Tazas) */}
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                {/* Stepper Reactivo [- N +] de 1 a 6 porciones (Estilo NYT Cooking) */}
+                {/* Control Segmentado Directo [ 1 ] [ 2 ] [ 4 ] personas + Stepper */}
                 <div className="flex items-center bg-white border border-stone-300 rounded-xl p-1 shadow-2xs">
                   <span className="text-xs text-stone-600 font-bold px-2 flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Porciones:</span>
+                    <span className="hidden sm:inline">Porciones:</span>
                   </span>
+                  
+                  {/* Botones directos [ 1 ] [ 2 ] [ 4 ] personas */}
                   <div className="flex items-center gap-1 bg-stone-100/90 rounded-lg p-0.5 border border-stone-200">
+                    {[1, 2, 4].map((num) => (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => setTargetServings(num)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-black transition cursor-pointer ${
+                          targetServings === num
+                            ? 'bg-amber-500 text-stone-950 shadow-xs'
+                            : 'text-stone-600 hover:text-stone-900 hover:bg-white/80'
+                        }`}
+                        title={`Ajustar para ${num} ${num === 1 ? 'persona' : 'personas'}`}
+                      >
+                        {num} {num === 1 ? 'pers.' : 'pers.'}
+                      </button>
+                    ))}
+
+                    <div className="w-[1px] h-4 bg-stone-300 mx-0.5" />
+
                     <button
                       type="button"
                       onClick={() => setTargetServings(Math.max(1, targetServings - 1))}
                       disabled={targetServings <= 1}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 hover:text-amber-950 disabled:opacity-30 disabled:cursor-not-allowed transition font-black text-sm cursor-pointer shadow-2xs"
-                      title="Reducir una porción"
-                      aria-label="Reducir porción"
+                      className="w-6 h-6 flex items-center justify-center rounded-md bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 hover:text-amber-950 disabled:opacity-30 disabled:cursor-not-allowed transition font-black text-xs cursor-pointer"
+                      title="Restar 1 porción"
+                      aria-label="Restar porción"
                     >
-                      <Minus className="w-3.5 h-3.5" />
+                      <Minus className="w-3 h-3" />
                     </button>
-                    <span className="w-7 text-center text-xs font-black text-stone-900">
+                    <span className="w-5 text-center text-xs font-black text-stone-900">
                       {targetServings}
                     </span>
                     <button
                       type="button"
-                      onClick={() => setTargetServings(Math.min(6, targetServings + 1))}
-                      disabled={targetServings >= 6}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 hover:text-amber-950 disabled:opacity-30 disabled:cursor-not-allowed transition font-black text-sm cursor-pointer shadow-2xs"
-                      title="Aumentar una porción"
-                      aria-label="Aumentar porción"
+                      onClick={() => setTargetServings(Math.min(8, targetServings + 1))}
+                      disabled={targetServings >= 8}
+                      className="w-6 h-6 flex items-center justify-center rounded-md bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 hover:text-amber-950 disabled:opacity-30 disabled:cursor-not-allowed transition font-black text-xs cursor-pointer"
+                      title="Sumar 1 porción"
+                      aria-label="Sumar porción"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3 h-3" />
                     </button>
                   </div>
-                  <span className="text-[11px] text-stone-400 font-medium px-2 hidden sm:inline">
-                    {targetServings === 1 ? 'persona' : 'personas'}
-                  </span>
                 </div>
 
                 {/* Conversor Automático: Métrico (g/ml) vs Tazas/Cucharadas */}
@@ -1526,6 +1570,16 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                     🥣 Tazas / Cdas
                   </button>
                 </div>
+
+                {/* Exportar / Imprimir Ficha Limpia (Mejora 10/10 tipo Paprika) */}
+                <button
+                  onClick={() => setIsPrintModalOpen(true)}
+                  className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-stone-300 shadow-2xs transition cursor-pointer"
+                  title="Exportar ficha técnica limpia para imprimir o guardar en PDF"
+                >
+                  <Printer className="w-3.5 h-3.5 text-stone-700" />
+                  <span className="hidden sm:inline">Imprimir Ficha</span>
+                </button>
 
                 {/* Add to Smart Shopping List */}
                 <button
@@ -1829,6 +1883,13 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       {/* ========================================================= */}
       {cookingStage === 'fuegos' && (
         <div className="space-y-6">
+
+        {/* Panel de Estación Multitarea: Temporizadores Paralelos (Mejora 10/10 tipo SideChef) */}
+        <MultiTimerPanel
+          onTimerComplete={(label) => {
+            speakSpanishText(`¡Alarma lista en ${label}!`);
+          }}
+        />
 
       {/* Aviso de Comprobación de Notificaciones al Iniciar Temporizador */}
       {timerNotice && (
@@ -2430,34 +2491,50 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               </span>
             )}
 
-            {/* Escalador Dinámico de Porciones en Vivo [- N +] (Estilo NYT Cooking) */}
+            {/* Escalador Dinámico de Porciones en Vivo [ 1 ] [ 2 ] [ 4 ] */}
             <div className="flex items-center bg-stone-100 border border-stone-300 rounded-xl p-0.5 shadow-2xs">
-              <span className="text-[11px] text-stone-600 font-bold px-1.5 hidden md:flex items-center gap-1">
+              <span className="text-[11px] text-stone-600 font-bold px-1.5 hidden lg:flex items-center gap-1">
                 <Users className="w-3 h-3 text-amber-600" />
                 <span>Porciones:</span>
               </span>
+              {[1, 2, 4].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setTargetServings(num)}
+                  className={`px-2 py-0.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                    targetServings === num
+                      ? 'bg-amber-500 text-stone-950 shadow-xs'
+                      : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+                  }`}
+                  title={`Calcular cantidades para ${num} ${num === 1 ? 'persona' : 'personas'}`}
+                >
+                  {num}p
+                </button>
+              ))}
+              <div className="w-[1px] h-3.5 bg-stone-300 mx-0.5" />
               <button
                 type="button"
                 onClick={() => setTargetServings(Math.max(1, targetServings - 1))}
                 disabled={targetServings <= 1}
-                className="w-6 h-6 flex items-center justify-center rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 disabled:opacity-30 transition cursor-pointer text-xs"
-                title="Reducir porción"
+                className="w-5 h-5 flex items-center justify-center rounded-md bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 disabled:opacity-30 transition cursor-pointer text-xs"
+                title="Reducir 1 porción"
                 aria-label="Reducir comensal"
               >
-                <Minus className="w-3 h-3" />
+                <Minus className="w-2.5 h-2.5" />
               </button>
-              <span className="w-6 text-center text-xs font-black text-stone-900" title={`${targetServings} ${targetServings === 1 ? 'persona' : 'personas'}`}>
+              <span className="w-4 text-center text-xs font-black text-stone-900">
                 {targetServings}
               </span>
               <button
                 type="button"
-                onClick={() => setTargetServings(Math.min(6, targetServings + 1))}
-                disabled={targetServings >= 6}
-                className="w-6 h-6 flex items-center justify-center rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 disabled:opacity-30 transition cursor-pointer text-xs"
-                title="Aumentar porción"
+                onClick={() => setTargetServings(Math.min(8, targetServings + 1))}
+                disabled={targetServings >= 8}
+                className="w-5 h-5 flex items-center justify-center rounded-md bg-white border border-stone-200 text-stone-700 hover:bg-amber-100 disabled:opacity-30 transition cursor-pointer text-xs"
+                title="Aumentar 1 porción"
                 aria-label="Aumentar comensal"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-2.5 h-2.5" />
               </button>
             </div>
 
@@ -2545,6 +2622,30 @@ export const CookingMode: React.FC<CookingModeProps> = ({
               )}
             </button>
 
+            {/* Masterclasses de Técnica Corta (Micro-video loop de Chefs Michelin) */}
+            <button
+              onClick={() => {
+                // Seleccionar cápsula contextual según el paso actual
+                const inst = (currentStep.instruction + ' ' + currentStep.title).toLowerCase();
+                let targetId: string | undefined = undefined;
+                if (inst.includes('cebolla') || inst.includes('corte') || inst.includes('picar')) targetId = 'mc-corte-cebolla-brunoise';
+                else if (inst.includes('sellar') || inst.includes('dorar') || inst.includes('costra') || inst.includes('maillard')) targetId = 'mc-reaccion-maillard-dorado';
+                else if (inst.includes('mantequilla')) targetId = 'mc-mantequilla-avellanada-noisette';
+                else if (inst.includes('pasta') || inst.includes('mantecatura') || inst.includes('espagueti')) targetId = 'mc-mantecatura-pasta-al-dente';
+                else if (inst.includes('desglas') || inst.includes('fondo') || inst.includes('vino')) targetId = 'mc-desglasado-fondo-sarten';
+                else if (inst.includes('saltear') || inst.includes('salteado') || inst.includes('wok')) targetId = 'mc-salteado-wok-respiracion';
+                
+                setMasterclassTargetId(targetId);
+                setIsMasterclassOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-300 border border-amber-500/40 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+              title="Ver técnica magistral en micro-video cinematográfico"
+            >
+              <PlayCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Cátedra Magistral</span>
+              <span className="sm:hidden">Masterclass</span>
+            </button>
+
             {/* Modo Pantalla Completa Inmersivo estilo Teleprompter / NYT Cooking */}
             <button
               onClick={() => setIsImmersiveCookModeOpen(true)}
@@ -2597,12 +2698,20 @@ export const CookingMode: React.FC<CookingModeProps> = ({
           </button>
 
           {isHandsFreeActive && (
-            <div className="px-3 py-1 bg-amber-50 border border-amber-300 text-amber-950 rounded-xl text-xs flex items-center gap-1.5 animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Escuchando: di <strong>"Siguiente"</strong>, <strong>"Atrás"</strong> o <strong>"Tiempo"</strong></span>
+            <div className="px-3.5 py-1.5 bg-amber-50 border border-amber-300 text-amber-950 rounded-xl text-xs flex flex-wrap items-center gap-2 shadow-2xs">
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span className="font-medium text-stone-700">Comandos rápidos:</span>
+              <span className="bg-white px-2 py-0.5 rounded-md font-mono font-bold text-amber-950 border border-amber-200 text-[11px]">"Siguiente"</span>
+              <span className="bg-white px-2 py-0.5 rounded-md font-mono font-bold text-amber-950 border border-amber-200 text-[11px]">"Atrás"</span>
+              <span className="bg-white px-2 py-0.5 rounded-md font-mono font-bold text-amber-950 border border-amber-200 text-[11px]">"Repite el paso"</span>
+              <span className="bg-white px-2 py-0.5 rounded-md font-mono font-bold text-amber-950 border border-amber-200 text-[11px]">"Tiempo"</span>
+              <span className="bg-white px-2 py-0.5 rounded-md font-mono font-bold text-rose-900 border border-rose-200 text-[11px]">"Silencio"</span>
               {handsFreeLastHeard && (
-                <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-300 text-[10px]">
-                  "{handsFreeLastHeard}"
+                <span className="font-mono bg-emerald-100 text-emerald-950 px-2 py-0.5 rounded-md border border-emerald-300 text-[11px] font-bold">
+                  ✓ "{handsFreeLastHeard}"
                 </span>
               )}
             </div>
@@ -2789,10 +2898,14 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                         </div>
                         <button
                           type="button"
-                          onClick={() => removeTimer(stepTimer.id)}
-                          className="px-5 py-3 bg-white text-rose-700 hover:bg-rose-50 rounded-2xl text-sm font-black shadow-md transition active:scale-95 cursor-pointer"
+                          onClick={() => {
+                            handleStopAlarm();
+                            removeTimer(stepTimer.id);
+                          }}
+                          className="px-5 py-3 bg-white text-rose-700 hover:bg-rose-50 rounded-2xl text-sm font-black shadow-md transition active:scale-95 cursor-pointer flex items-center gap-2"
                         >
-                          Entendido, ya apagué
+                          <VolumeX className="w-4 h-4 stroke-[3]" />
+                          <span>Detener alarma (Ya apagué)</span>
                         </button>
                       </div>
                     </div>
@@ -3673,7 +3786,19 @@ export const CookingMode: React.FC<CookingModeProps> = ({
       {/* Modal de Emergencias Culinarias S.O.S. */}
       <CookingEmergencyModal
         isOpen={isEmergencyModalOpen}
-        onClose={() => setIsEmergencyModalOpen(false)}
+        onClose={() => {
+          setIsEmergencyModalOpen(false);
+          setActiveTimers((prev) =>
+            prev.map((t) => (t.remainingSeconds > 0 ? { ...t, isRunning: true } : t))
+          );
+        }}
+        onResumeCooking={() => {
+          setIsEmergencyModalOpen(false);
+          setActiveTimers((prev) =>
+            prev.map((t) => (t.remainingSeconds > 0 ? { ...t, isRunning: true } : t))
+          );
+          speakSpanishText('Cocina reanudada. Estás en control.');
+        }}
         onOpenVoiceAssistant={() => {
           setIsEmergencyModalOpen(false);
           onOpenVoiceAssistantWithContext?.({
@@ -3815,6 +3940,21 @@ export const CookingMode: React.FC<CookingModeProps> = ({
         step={currentStep}
         recipeTitle={selectedRecipe.title}
         targetCue={currentStep.stepVisualCueLabel}
+      />
+
+      {/* Modal: Masterclasses de Alta Escuela (Micro-videos loops y chefs Michelin) */}
+      <MasterclassModal
+        isOpen={isMasterclassOpen}
+        onClose={() => setIsMasterclassOpen(false)}
+        selectedCapsuleId={masterclassTargetId}
+        onSpeak={(txt) => speakSpanishText(txt)}
+      />
+
+      {/* Modal: Ficha Técnica Limpia Imprimible (Exportación PDF/TXT sin distracciones) */}
+      <RecipePrintModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        recipe={selectedRecipe}
       />
 
       {/* 4. BARRA INFERIOR FLOTANTE FIJA (THUMB ZONE) DURANTE LA COCCIÓN */}

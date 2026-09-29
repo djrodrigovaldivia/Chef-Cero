@@ -213,8 +213,10 @@ export type WorldCuisineId =
   | 'mexicana'
   | 'asiatica'
   | 'italiana'
+  | 'peruana'
   | 'espanola'
   | 'francesa'
+  | 'americana'
   | 'autor';
 
 export interface WorldCuisine {
@@ -369,8 +371,36 @@ export interface SignatureDish extends Recipe {
     whyItHarmonizes: string;
   };
   authorNotes?: string;
-  personalRating?: number; // 1 to 5
+  personalRating?: number;
   timesCooked?: number;
   createdAt: string;
 }
 
+export interface MasterclassCapsule {
+  id: string;
+  title: string;
+  masterChef: string;
+  restaurantOrPedigree: string;
+  badge: string;
+  durationSeconds: number;
+  category: 'corte' | 'fuego' | 'emulsion' | 'salsas' | 'marcado_maillard' | 'reposteria';
+  videoLoopUrl: string; // Micro-video cinematográfico optimizado en bucle continuo
+  fallbackPosterUrl: string;
+  masteryRule: string;
+  scientificWhy: string;
+  proMistakeToAvoid: string;
+  sensoryCue: string;
+  historicalQuote?: string;
+  youtubeId?: string; // ID opcional para expandir a masterclass completa en alta definición
+}
+
+export interface ParallelTimer {
+  id: string;
+  label: string;
+  totalSeconds: number;
+  remainingSeconds: number;
+  isRunning: boolean;
+  color: string;
+  associatedStation?: 'fuegos' | 'pasta_arroz' | 'horno' | 'sarten' | 'reposo';
+  soundTriggered?: boolean;
+}

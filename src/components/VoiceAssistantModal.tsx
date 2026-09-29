@@ -133,6 +133,12 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         window.dispatchEvent(new CustomEvent('chef-cero-step-cmd', { detail: { action: 'emergency' } }));
         setEmergencyAlert('¡Emergencia culinaria activada por comando de voz!');
       },
+      onSilence: () => {
+        stopSpeaking();
+        voiceConn.flushPlayback();
+        setIsSpeaking(false);
+        window.dispatchEvent(new CustomEvent('chef-cero-step-cmd', { detail: { action: 'silence' } }));
+      },
       onStatusChange: (_active, lastWord) => {
         if (lastWord) {
           setDirtyHandsLastHeard(lastWord);
@@ -1088,42 +1094,12 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               </span>
             </button>
 
-            {/* Toggle Gemini 3.8 Live API en tiempo real */}
-            <button
-              onClick={() => {
-                if (isLiveActive) {
-                  stopLiveSession();
-                } else {
-                  startLiveSession();
-                }
-              }}
-              title={
-                isLiveActive
-                  ? 'Desactivar Gemini 3.8 Live y volver a chat estándar'
-                  : 'Activar Gemini 3.8 Live API (conversación de audio en tiempo real continua manos libres)'
-              }
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
-                isLiveActive
-                  ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-300 animate-pulse'
-                  : 'bg-rose-700/80 hover:bg-rose-600 text-white shadow-sm'
-              }`}
-            >
-              <Radio className={`w-3.5 h-3.5 ${isLiveActive ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">
-                {isLiveActive ? 'Live 3.8: ON' : 'Live 3.8'}
-              </span>
-              <span className="sm:hidden">
-                {isLiveActive ? 'Live ON' : 'Live'}
-              </span>
-            </button>
-
-
             {/* Toggle Conversación Continua Manos Libres */}
             <button
               onClick={() => setIsContinuousMode((prev) => !prev)}
               title={
                 isContinuousMode
-                  ? 'Conversación Fluida ACTIVA: el Chef abre el micrófono solo tras hablar para escucharte'
+                  ? 'Conversación Fluida ACTIVA: el Chef abre el micrófono tras responder para escucharte'
                   : 'Modo manual: toca el botón de micrófono cuando quieras hablar'
               }
               className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition ${
@@ -1155,11 +1131,30 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               </span>
             </button>
 
+            {/* BOTÓN FÍSICO INMEDIATO: CALLAR / PARAR AUDIO AL INSTANTE */}
+            {isSpeaking && (
+              <button
+                type="button"
+                onClick={() => {
+                  stopSpeaking();
+                  voiceConn.flushPlayback();
+                  setIsSpeaking(false);
+                  isSpeakingRef.current = false;
+                }}
+                className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center gap-1.5 shadow-lg ring-2 ring-red-300 animate-bounce active:scale-95 cursor-pointer"
+                title="Detener el habla del Chef al milisegundo"
+              >
+                <VolumeX className="w-4 h-4 stroke-[3]" />
+                <span>CALLAR CHEF</span>
+              </button>
+            )}
+
             {/* Toggle de Modo Silencioso / Voz */}
             <button
               onClick={() => {
                 if (isSpeaking) {
                   stopSpeaking();
+                  voiceConn.flushPlayback();
                   setIsSpeaking(false);
                 }
                 toggleSilentMode();
@@ -1193,14 +1188,15 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               onClick={() => {
                 stopLiveSession();
                 stopSpeaking();
+                voiceConn.flushPlayback();
                 onClose();
               }}
-              className="px-3 py-1.5 rounded-xl bg-red-600/90 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm active:scale-95"
+              className="px-3 py-1.5 rounded-xl bg-stone-900/80 hover:bg-stone-900 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm active:scale-95"
               aria-label="Salir del asistente"
-              title="Salir del modo Chef Cero en vivo"
+              title="Cerrar el asistente"
             >
               <X className="w-4 h-4 stroke-[2.5]" />
-              <span className="inline font-bold">Salir</span>
+              <span className="inline font-bold">Cerrar</span>
             </button>
           </div>
         </div>
@@ -1245,10 +1241,10 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             <div className="mt-2.5 pt-2 border-t border-white/20 flex flex-wrap items-center gap-1.5 text-[11px]">
               <span className="text-amber-200 font-semibold text-[10px] uppercase">Dí en voz alta:</span>
               <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Siguiente"</span>
-              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Anterior"</span>
-              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Repetir"</span>
+              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Atrás"</span>
+              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Repite el paso"</span>
               <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Tiempo"</span>
-              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Pausa"</span>
+              <span className="bg-black/30 px-2 py-0.5 rounded-md font-mono font-bold text-amber-200">"Silencio"</span>
               <span className="bg-red-900/60 text-red-200 px-2 py-0.5 rounded-md font-mono font-bold">"S.O.S."</span>
             </div>
 
@@ -1509,27 +1505,6 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
         {/* Chat History */}
         <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-amber-50/20">
-          {/* Banner invitando a usar Live si está disponible y aún no está activo */}
-          {!isLiveActive && isLiveAvailable && (
-            <div className="p-3 bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200/90 rounded-2xl flex items-center justify-between gap-3 text-xs text-rose-950 shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-rose-600 text-white rounded-xl shrink-0 shadow-xs">
-                  <Radio className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="font-bold text-rose-950">Conversación en Tiempo Real con Gemini 3.8 Live</p>
-                  <p className="text-[11px] text-stone-600">Habla con las manos libres de corrido sin tocar botones.</p>
-                </div>
-              </div>
-              <button
-                onClick={startLiveSession}
-                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition shrink-0 flex items-center gap-1.5 text-xs"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Activar Live</span>
-              </button>
-            </div>
-          )}
 
           {messages.map((msg) => (
             <div
@@ -1706,6 +1681,21 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             )}
           </button>
 
+          {/* Botón Silencio Instantáneo / STOP en barra inferior */}
+          {isSpeaking && (
+            <button
+              onClick={() => {
+                stopSpeaking();
+                setIsSpeaking(false);
+                isSpeakingRef.current = false;
+              }}
+              className="p-3.5 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center shadow-lg ring-2 ring-red-300 animate-pulse cursor-pointer shrink-0"
+              title="Callar la voz del Chef de inmediato"
+            >
+              <VolumeX className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          )}
+
           <div className="flex-1 relative">
             <input
               type="text"
@@ -1713,18 +1703,16 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               onChange={(e) => setInputQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendQuery()}
               placeholder={
-                isLiveActive
-                  ? '🔴 Gemini 3.8 Live activo: habla de corrido o escribe aquí...'
-                  : isListening
-                  ? 'Escuchando tu voz en vivo...'
-                  : 'Pregunta lo que sea o toca el micrófono...'
+                isListening
+                  ? 'Escuchando tu voz en vivo en español latino...'
+                  : 'Pregúntale al Chef o toca el micrófono...'
               }
               className="w-full bg-stone-100 border border-stone-300 rounded-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition-all text-stone-800"
             />
-            {(isListening || isLiveActive) && (
+            {isListening && (
               <span className="absolute right-3 top-3 flex h-3 w-3">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isLiveActive ? 'bg-rose-400' : 'bg-red-400'} opacity-75`}></span>
-                <span className={`relative inline-flex rounded-full h-3 w-3 ${isLiveActive ? 'bg-rose-500' : 'bg-red-500'}`}></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
               </span>
             )}
           </div>
@@ -1732,7 +1720,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           <button
             onClick={() => handleSendQuery()}
             disabled={!inputQuery.trim() || isLoading}
-            className="p-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-full transition-colors"
+            className="p-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-full transition-colors cursor-pointer"
           >
             <Send className="w-5 h-5" />
           </button>

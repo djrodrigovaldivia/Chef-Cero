@@ -1,20 +1,67 @@
 {
   "id": "/",
-  "name": "Chef Cero: Mi Asistente de Voz y Mentor Culinario Inteligente",
+  "name": "Chef Cero: Asistente y Mentor Culinario",
   "short_name": "Chef Cero",
-  "description": "Asistente culinario interactivo con voz en vivo, mentoría paso a paso y temporizadores con alertas push en segundo plano.",
+  "description": "Asistente culinario interactivo con voz en vivo, mentoría paso a paso para principiantes y temporizadores con alertas en segundo plano.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "theme_color": "#f59e0b",
-  "background_color": "#fffbeb",
+  "orientation": "portrait-primary",
+  "background_color": "#0c0a09",
+  "theme_color": "#f97316",
+  "categories": ["food", "lifestyle", "utilities"],
   "icons": [
     {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icon.svg",
-      "sizes": "192x192 512x512",
+      "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Cocinar con lo que tengo",
+      "short_name": "Alacena",
+      "description": "Crea recetas con los ingredientes que ya tienes en casa",
+      "url": "/?action=alacena",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Inspector de Alimentos",
+      "short_name": "Inspector",
+      "description": "Analiza el estado de frescura y seguridad de tus alimentos",
+      "url": "/?action=inspector",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

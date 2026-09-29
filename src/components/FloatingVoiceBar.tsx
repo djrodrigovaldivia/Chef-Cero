@@ -147,42 +147,32 @@ export const FloatingVoiceBar: React.FC<FloatingVoiceBarProps> = ({
     <aside
       id="floating-voice-bar"
       aria-label="Asistente de voz manos libres"
-      className="fixed bottom-20 left-4 md:bottom-6 md:left-6 z-30 transition-all duration-300"
+      className="fixed bottom-5 right-4 sm:right-6 z-30 transition-all duration-300"
     >
       <button
         onClick={onOpenVoice}
         aria-label="Hablar con Chef Cero por voz"
-        title={
+        title="Consultar por voz al Chef Cero"
+        className={`group relative flex items-center gap-2 px-3.5 py-2 rounded-full shadow-md transition-all duration-300 cursor-pointer backdrop-blur-md active:scale-95 border ${
           isMicActive
-            ? 'Micrófono escuchando tu voz. Toca para abrir el panel de cocina.'
-            : 'Chef Cero: Toca para consultar por voz o resolver dudas.'
-        }
-        className={`group relative flex items-center justify-center w-12 h-12 md:w-14 md:h-14 rounded-full shadow-2xl transition-all duration-300 cursor-pointer backdrop-blur-md active:scale-95 ${
-          isMicActive
-            ? 'bg-amber-500 text-stone-950 border-2 border-white ring-4 ring-amber-400/50 shadow-amber-500/40 animate-pulse scale-105'
-            : 'bg-stone-900/95 hover:bg-stone-900 text-amber-400 border border-stone-700/80 hover:border-amber-400/60 ring-2 ring-stone-800'
+            ? 'bg-amber-500 text-stone-950 border-amber-300 ring-4 ring-amber-300/40 animate-pulse'
+            : 'bg-white/95 hover:bg-white text-stone-800 border-stone-200/90 hover:border-amber-400 hover:shadow-lg'
         }`}
       >
-        {/* Glow dinámico de fondo cuando hay energía en el micrófono */}
-        {isMicActive && (
-          <div
-            className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-500/30 via-orange-500/30 to-amber-500/30 blur-md pointer-events-none transition-opacity duration-200"
-            style={{ opacity: Math.max(0.4, audioEnergy * 2) }}
-          />
-        )}
-
-        {/* Ícono de Micrófono */}
-        <div className="relative flex items-center justify-center">
-          <Mic className={`w-5 h-5 md:w-6 md:h-6 ${isMicActive ? 'text-stone-950 animate-pulse' : 'text-amber-400 group-hover:scale-110 transition-transform'}`} />
-
-          {/* Anillo de ping cuando está activo */}
-          {isMicActive && (
-            <span className="absolute -top-1 -right-1 flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-90"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400 border border-stone-900"></span>
-            </span>
-          )}
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+          isMicActive ? 'bg-stone-950 text-white' : 'bg-amber-100 text-amber-900 group-hover:bg-amber-500 group-hover:text-stone-950'
+        }`}>
+          <Mic className="w-3.5 h-3.5" />
         </div>
+        <span className="text-xs font-bold hidden sm:inline text-stone-700 group-hover:text-stone-950">
+          {isMicActive ? 'Escuchando...' : 'Chef por Voz'}
+        </span>
+        {isMicActive && (
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+          </span>
+        )}
       </button>
     </aside>
   );

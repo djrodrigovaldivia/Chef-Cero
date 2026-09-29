@@ -191,6 +191,56 @@ export function playTimerCompletionChime() {
   }
 }
 
+export function playPreventiveThermalWarningChime() {
+  // Si está en Modo Silencioso, emitir vibración sutil y subtítulo
+  if (isSilentModeActive) {
+    try {
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate([150, 80, 150]);
+      }
+    } catch (_) {}
+
+    emitSubtitle({
+      id: 'thermal-warning-' + Date.now(),
+      text: 'Atención: faltan 30 segundos, prepárate para retirar o apagar el fuego.',
+      speaker: 'Chef Cero (Aviso Térmico)',
+      badge: 'Alerta Preventiva T-30s',
+      timestamp: Date.now(),
+      durationMs: 5000,
+      isEmergency: false,
+    });
+    return;
+  }
+
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+
+    // Chime preventivo sutil de 2 tonos armónicos (Re5 587Hz -> La5 880Hz)
+    const tones = [587.33, 880.0];
+    tones.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.18);
+
+      gain.gain.setValueAtTime(0.001, now + idx * 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.25, now + idx * 0.18 + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.18 + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + idx * 0.18);
+      osc.stop(now + idx * 0.18 + 0.38);
+    });
+  } catch (err) {
+    console.warn('Preventive chime could not play:', err);
+  }
+}
+
+
 export function playEmergencyAlertSound() {
   // Si está en Modo Silencioso, emitir solo subtítulo y vibración
   if (isSilentModeActive) {
@@ -234,6 +284,76 @@ export function playEmergencyAlertSound() {
     osc.stop(now + 0.35);
   } catch (err) {
     console.warn('Emergency sound error:', err);
+  }
+}
+
+// ============================================================================
+// ALARMA SONORA EN BUCLE DE COCINA (Web Audio API)
+// Diseñada para sonar insistentemente hasta que el usuario presione "Detener Alarma"
+// ============================================================================
+let timerAlarmInterval: any = null;
+let isAlarmLooping = false;
+
+export function startLoopingTimerAlarm(label: string = 'Temporizador') {
+  if (isAlarmLooping) return;
+  isAlarmLooping = true;
+
+  const playBeepPattern = () => {
+    if (!isAlarmLooping) return;
+    try {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+
+      // Patrón de 3 beeps de cocina de alta frecuencia (880Hz -> 1046Hz -> 1318Hz)
+      const freqs = [880, 880, 1046, 1318];
+      freqs.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+
+        gain.gain.setValueAtTime(0.001, now + idx * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.4, now + idx * 0.12 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.10);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + idx * 0.12);
+        osc.stop(now + idx * 0.12 + 0.11);
+      });
+
+      // Vibración de móvil si está disponible
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([250, 100, 250, 100, 400]);
+      }
+    } catch (e) {
+      console.warn('Chef Cero: Error en loop de alarma:', e);
+    }
+  };
+
+  // Sonar de inmediato y repetir cada 1.2 segundos
+  playBeepPattern();
+  timerAlarmInterval = setInterval(playBeepPattern, 1200);
+
+  // Subtítulo persistente accesible
+  emitSubtitle({
+    id: 'alarm-' + Date.now(),
+    text: `⏰ ¡Alarma activa: ${label}! Retira del fuego o apaga la hornalla ahora.`,
+    speaker: 'Alarma de Cocina',
+    badge: '¡Tiempo Cumplido!',
+    timestamp: Date.now(),
+    durationMs: 15000,
+    isEmergency: true,
+  });
+}
+
+export function stopTimerAlarmSound() {
+  isAlarmLooping = false;
+  if (timerAlarmInterval) {
+    clearInterval(timerAlarmInterval);
+    timerAlarmInterval = null;
   }
 }
 
@@ -282,18 +402,20 @@ function getBestLatinAmericanVoice(): SpeechSynthesisVoice | null {
   }
 
   // 2. Locales explícitos de Latinoamérica (es-419, es-MX, es-US, es-CO, es-CL, es-AR, etc.)
-  const latinLocales = ['es-419', 'es-mx', 'es-us', 'es-co', 'es-cl', 'es-ar', 'es-pe', 'es-419'];
+  const latinLocales = ['es-419', 'es-mx', 'es-us', 'es-co', 'es-cl', 'es-ar', 'es-pe'];
   for (const loc of latinLocales) {
     const match = voices.find((v) => v.lang && v.lang.toLowerCase() === loc);
     if (match) return match;
   }
 
-  // 3. Cualquier voz en español
-  const anySpanish = voices.find(
-    (v) => v.lang && v.lang.toLowerCase().startsWith('es')
-  );
+  // 3. Cualquier voz auténtica en español
+  const anySpanish = voices.find((v) => {
+    const lang = (v.lang || '').toLowerCase();
+    return lang.startsWith('es-') || lang === 'es';
+  });
   if (anySpanish) return anySpanish;
 
+  // Si solo hay voces en inglés u otros idiomas, devolver null para evitar robot en inglés
   return null;
 }
 
@@ -517,6 +639,7 @@ export function speakSpanishText(
 }
 
 export function stopSpeaking() {
+  // 1. Corte inmediato del elemento HTMLAudioElement (audio nativo TTS)
   if (currentAudioElement) {
     try {
       currentAudioElement.pause();
@@ -526,11 +649,24 @@ export function stopSpeaking() {
     currentAudioElement = null;
   }
 
+  // 2. Corte inmediato de SpeechSynthesis local del navegador
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.cancel();
+      }
     } catch (_) {}
     currentUtterance = null;
     (window as any).__chefCeroUtterance = null;
   }
+
+  // 3. Limpiar subtítulos hablados de inmediato
+  clearActiveSubtitle();
+}
+
+// Exponer como comando maestro global para cualquier botón de pánico / silencio
+if (typeof window !== 'undefined') {
+  (window as any).hardStopChefAudio = stopSpeaking;
 }

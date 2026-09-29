@@ -23,9 +23,9 @@ export const CRIOLLO_RECIPES: Recipe[] = [
       mouthfeel: 'Caldoso, sedoso y reconfortante; el zapallo camote aporta una cremosidad untuosa inconfundible.',
       grandmotherSecret: 'Agregar un trozo de pimiento rojo crudo y una ramita entera de apio durante el hervor lento para perfumar el caldo.',
     },
-    imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="%231c1917"/><radialGradient id="soupGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="%23f59e0b" stop-opacity="0.35"/><stop offset="100%" stop-color="%231c1917" stop-opacity="0"/></radialGradient><rect width="800" height="450" fill="url(%23soupGlow)"/><ellipse cx="400" cy="240" rx="270" ry="170" fill="%23292524" stroke="%2378716c" stroke-width="8"/><ellipse cx="400" cy="235" rx="230" ry="140" fill="%23d97706" opacity="0.85"/><ellipse cx="340" cy="210" rx="60" ry="35" fill="%23b45309" stroke="%2378350f" stroke-width="3"/><ellipse cx="460" cy="210" rx="45" ry="30" fill="%23f59e0b"/><ellipse cx="390" cy="265" rx="55" ry="35" fill="%23fcd34d"/><ellipse cx="460" cy="270" rx="35" ry="20" fill="%23fbbf24"/><circle cx="360" cy="180" r="8" fill="%2315803d"/><circle cx="430" cy="250" r="7" fill="%2315803d"/><circle cx="410" cy="190" r="6" fill="%2316a34a"/><text x="400" y="405" font-family="serif" font-size="22" font-weight="bold" fill="%23fef3c7" text-anchor="middle" letter-spacing="1">CAZUELA CRIOLLA TRADICIONAL</text></svg>',
+    imageUrl: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80',
     finishGalleryUrls: [
-      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="%231c1917"/><text x="400" y="235" font-family="serif" font-size="20" fill="%23fef3c7" text-anchor="middle">Plato terminado: Caldo dorado con cilantro fresco</text></svg>'
+      'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80'
     ],
     finishVisualCheckpoints: [
       'Caldo de color ámbar cristalino, con pequeñas perlas de grasa brillante en la superficie.',
@@ -156,7 +156,10 @@ export const CRIOLLO_RECIPES: Recipe[] = [
       mouthfeel: 'Contraste sublime: cubierta crujiente caramelizada, crema sedosa de maíz y base tierna y jugosa de carne.',
       grandmotherSecret: 'Dejar enfriar el pino de carne 10 minutos antes de montar el pastel para que los jugos no suban a la pastelera de choclo.',
     },
-    imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="%231c1917"/><radialGradient id="pieGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="%23d97706" stop-opacity="0.4"/><stop offset="100%" stop-color="%231c1917" stop-opacity="0"/></radialGradient><rect width="800" height="450" fill="url(%23pieGlow)"/><ellipse cx="400" cy="250" rx="280" ry="150" fill="%2344403c" stroke="%23292524" stroke-width="12"/><ellipse cx="400" cy="240" rx="245" ry="125" fill="%23b45309"/><ellipse cx="400" cy="235" rx="235" ry="115" fill="%23f59e0b"/><ellipse cx="370" cy="220" rx="90" ry="40" fill="%23d97706" opacity="0.6"/><ellipse cx="450" cy="245" rx="80" ry="35" fill="%23b45309" opacity="0.45"/><circle cx="340" cy="210" r="14" fill="%2378350f" opacity="0.7"/><ellipse cx="470" cy="205" rx="16" ry="9" fill="%2315803d"/><ellipse cx="485" cy="210" rx="14" ry="8" fill="%2316a34a"/><text x="400" y="415" font-family="serif" font-size="22" font-weight="bold" fill="%23fef3c7" text-anchor="middle" letter-spacing="1">PASTEL DE CHOCLO CRIOLLO EN GREDA</text></svg>',
+    imageUrl: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=800&q=80',
+    finishGalleryUrls: [
+      'https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=800&q=80'
+    ],
     finishVisualCheckpoints: [
       'Superficie de choclo de color dorado caramelo con manchas tostadas crocantes.',
       'Al cortar una porción, la pastelera se mantiene firme sin desmoronarse en sopa.',
@@ -246,7 +249,10 @@ export const CRIOLLO_RECIPES: Recipe[] = [
       mouthfeel: 'Denso, meloso y reconfortante; la yema líquida al romperse crea una salsa rica y cremosa.',
       grandmotherSecret: 'Agregar un puñado de acelga picada fina los últimos 4 minutos para aportar frescura y color vivo.',
     },
-    imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="%231c1917"/><radialGradient id="stewGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="%23f97316" stop-opacity="0.35"/><stop offset="100%" stop-color="%231c1917" stop-opacity="0"/></radialGradient><rect width="800" height="450" fill="url(%23stewGlow)"/><ellipse cx="400" cy="245" rx="260" ry="155" fill="%23292524" stroke="%2357534e" stroke-width="8"/><ellipse cx="400" cy="240" rx="230" ry="130" fill="%23c2410c"/><ellipse cx="370" cy="230" rx="140" ry="70" fill="%23ea580c" opacity="0.9"/><circle cx="340" cy="210" r="10" fill="%2316a34a"/><circle cx="430" cy="260" r="8" fill="%23facc15"/><circle cx="450" cy="220" r="9" fill="%2316a34a"/><ellipse cx="400" cy="220" rx="75" ry="50" fill="%23f8fafc" stroke="%23fcd34d" stroke-width="4"/><circle cx="400" cy="220" r="24" fill="%23f59e0b"/><circle cx="405" cy="216" r="6" fill="%23fbbf24"/><text x="400" y="415" font-family="serif" font-size="22" font-weight="bold" fill="%23fef3c7" text-anchor="middle" letter-spacing="1">CHARQUICÁN CRIOLLO A CABALLO</text></svg>',
+    imageUrl: 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?auto=format&fit=crop&w=800&q=80',
+    finishGalleryUrls: [
+      'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?auto=format&fit=crop&w=800&q=80'
+    ],
     finishVisualCheckpoints: [
       'Guiso de color naranja cálido con pequeños trozos de papa y puntos verdes de acelga.',
       'Huevo frito encima con clara cocida y bordes dorados crujientes (puntilla).',
@@ -329,7 +335,10 @@ export const CRIOLLO_RECIPES: Recipe[] = [
       mouthfeel: 'Salsa espesa, aterciopelada y envolvente; los tallarines resbalan suaves con los porotos tiernos.',
       grandmotherSecret: 'Freír la longaniza en rodajas primero y usar esa misma grasita aromática para freír el sofrito de cebolla con ají de color.',
     },
-    imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="%231c1917"/><radialGradient id="beanGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="%23ea580c" stop-opacity="0.35"/><stop offset="100%" stop-color="%231c1917" stop-opacity="0"/></radialGradient><rect width="800" height="450" fill="url(%23beanGlow)"/><ellipse cx="400" cy="240" rx="270" ry="160" fill="%23292524" stroke="%2378716c" stroke-width="8"/><ellipse cx="400" cy="235" rx="235" ry="135" fill="%23c2410c"/><ellipse cx="400" cy="230" rx="220" ry="120" fill="%23ea580c" opacity="0.85"/><path d="M 300 230 Q 360 210 420 240 T 500 220" stroke="%23fef08a" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M 320 250 Q 390 270 450 230 T 490 255" stroke="%23fef08a" stroke-width="6" fill="none" stroke-linecap="round"/><ellipse cx="360" cy="205" rx="30" ry="18" fill="%2378350f" stroke="%23b91c1c" stroke-width="2"/><ellipse cx="450" cy="215" rx="32" ry="18" fill="%2378350f" stroke="%23b91c1c" stroke-width="2"/><circle cx="395" cy="255" r="7" fill="%2378350f"/><circle cx="430" cy="265" r="8" fill="%2378350f"/><text x="400" y="415" font-family="serif" font-size="22" font-weight="bold" fill="%23fef3c7" text-anchor="middle" letter-spacing="1">POROTOS CON RIENDAS Y LONGANIZA</text></svg>',
+    imageUrl: 'https://images.unsplash.com/photo-1547496502-affa22d38842?auto=format&fit=crop&w=800&q=80',
+    finishGalleryUrls: [
+      'https://images.unsplash.com/photo-1547496502-affa22d38842?auto=format&fit=crop&w=800&q=80'
+    ],
     finishVisualCheckpoints: [
       'Caldo espeso y anaranjado que no se separa en agua y porotos.',
       'Tallarines ("riendas") tiernos y teñidos por el caldo.',
@@ -409,7 +418,10 @@ export const CRIOLLO_RECIPES: Recipe[] = [
       mouthfeel: 'Aterciopelada, suntuosa y densa, napa cada hebra de pollo tierno con brillo suave.',
       grandmotherSecret: 'Añadir 2 cucharadas de queso parmesano recién rallado justo al apagar el fuego para darle elasticidad y umami profundo.',
     },
-    imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="%231c1917"/><radialGradient id="ajiGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="%23facc15" stop-opacity="0.35"/><stop offset="100%" stop-color="%231c1917" stop-opacity="0"/></radialGradient><rect width="800" height="450" fill="url(%23ajiGlow)"/><ellipse cx="400" cy="240" rx="270" ry="160" fill="%23f8fafc" stroke="%23cbd5e1" stroke-width="8"/><ellipse cx="400" cy="235" rx="230" ry="130" fill="%23eab308"/><ellipse cx="400" cy="230" rx="210" ry="115" fill="%23facc15" opacity="0.95"/><circle cx="400" cy="210" r="16" fill="%23451a03"/><circle cx="340" cy="240" r="14" fill="%23f8fafc" stroke="%23f59e0b" stroke-width="6"/><circle cx="460" cy="240" r="14" fill="%23f8fafc" stroke="%23f59e0b" stroke-width="6"/><circle cx="420" cy="255" r="5" fill="%2315803d"/><circle cx="380" cy="255" r="6" fill="%2315803d"/><text x="400" y="415" font-family="serif" font-size="22" font-weight="bold" fill="%23fef3c7" text-anchor="middle" letter-spacing="1">AJÍ DE GALLINA CREMOSO LIMEÑO</text></svg>',
+    imageUrl: 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=800&q=80',
+    finishGalleryUrls: [
+      'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=800&q=80'
+    ],
     finishVisualCheckpoints: [
       'Crema de color amarillo dorado brillante y uniforme sin separación de aceite.',
       'Hebras de pechuga de pollo visibles y jugosas al levantar con el tenedor.',
@@ -494,7 +506,10 @@ export const CRIOLLO_RECIPES: Recipe[] = [
       mouthfeel: 'Carne extremadamente tierna que cede fácil, cebolla crocante al morder y jugo sabroso para mojar.',
       grandmotherSecret: 'Tener todo cortado al lado antes de prender el fuego: este plato se cocina en exactamente 4 minutos de reloj.',
     },
-    imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="%231c1917"/><radialGradient id="wokGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="%23dc2626" stop-opacity="0.35"/><stop offset="100%" stop-color="%231c1917" stop-opacity="0"/></radialGradient><rect width="800" height="450" fill="url(%23wokGlow)"/><ellipse cx="400" cy="240" rx="270" ry="160" fill="%231c1917" stroke="%2344403c" stroke-width="10"/><ellipse cx="400" cy="235" rx="230" ry="130" fill="%23292524"/><ellipse cx="370" cy="215" rx="45" ry="18" fill="%23451a03" stroke="%2378350f" stroke-width="2"/><ellipse cx="450" cy="225" rx="40" ry="18" fill="%23451a03"/><ellipse cx="350" cy="250" rx="35" ry="15" fill="%23831843"/><ellipse cx="430" cy="255" rx="35" ry="16" fill="%23dc2626"/><ellipse cx="395" cy="205" rx="25" ry="10" fill="%23facc15"/><circle cx="410" cy="245" r="6" fill="%2316a34a"/><circle cx="380" cy="230" r="5" fill="%2316a34a"/><text x="400" y="415" font-family="serif" font-size="22" font-weight="bold" fill="%23fef3c7" text-anchor="middle" letter-spacing="1">LOMO SALTADO AL FUEGO VIVO</text></svg>',
+    imageUrl: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80',
+    finishGalleryUrls: [
+      'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80'
+    ],
     finishVisualCheckpoints: [
       'Tiras de carne con brillo jugoso y orillas tostadas.',
       'Cebolla morada en pétalos firmes y tomates con piel intacta pero jugosos.',

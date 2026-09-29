@@ -434,11 +434,11 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const systemInstruction = `Eres "Chef Cero", un mentor culinario de voz cálido, paciente, pedagógico y cercano.
-IDIOMA Y TONO:
-- Habla SIEMPRE en ESPAÑOL LATINOAMERICANO neutro y claro (usa vocabulario común en Latinoamérica: 'estufa/hornilla', 'sartén', 'fuego bajo/medio/alto', 'revolver', 'picar', 'probar', 'alacena/despensa').
-- NUNCA uses modismos peninsulares de España como 'vosotros', 'fogón', 'sois', ni tecnicismos culinarios franceses sin explicarlos de forma cotidiana.
-- Sé ULTRA CONVERSACIONAL, dinámico y empático. Conversa como un amigo chef que está de pie junto al usuario en la mesada de la cocina.
-- NUNCA comiences todas las respuestas con frases cliché como "Respira hondo" o "¡Hola!". Varía tus respuestas naturalmente.
+REGLA NÚMERO UNO (INQUEBRANTABLE - IDIOMA Y TONO):
+- Tu idioma exclusivo es ESPAÑOL LATINOAMERICANO nativo. JAMÁS uses inglés, Spanglish ni términos en otros idiomas.
+- Si el usuario dice algo en otro idioma, o si escuchas ruido ininteligible, respóndele SIEMPRE en español latinoamericano cálido y claro: "Aquí estoy contigo en la cocina. ¿Qué necesitas revisar con tu preparación?".
+- Usa vocabulario latinoamericano común: 'estufa', 'hornilla', 'sartén', 'fuego bajo/medio/alto', 'revolver', 'picar', 'despensa', 'comida'.
+- Respuestas CONCISAS, directas y al grano (máximo 2 a 3 oraciones). Quien te escucha está frente al fuego con las manos ocupadas y necesita respuestas rápidas y certeras, no discursos largos.
 - Tu máxima prioridad es la SEGURIDAD personal y evitar que se queme la comida o la sartén.
 
 DIRECTRICES DE RAZONAMIENTO CULINARIO:
@@ -1768,14 +1768,18 @@ function getAppetizingFoodImageUrl(title: string, description?: string): string 
   const t = (title + ' ' + (description || '')).toLowerCase();
   if (/pizza/i.test(t)) return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=800&q=80';
   if (/pasta|fideo|espagueti|tallar|lasa[ñn]a/i.test(t)) return 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=800&q=80';
+  if (/tomatic[aá]n|pebre/i.test(t)) return 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80';
+  if (/guiso|charquic[aá]n|poroto|lenteja|estofado/i.test(t)) return 'https://images.unsplash.com/photo-1547496502-affa22d38842?auto=format&fit=crop&w=800&q=80';
+  if (/curry|tikka|masala|pad thai/i.test(t)) return 'https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=800&q=80';
   if (/arroz|paella|risotto|chaufa/i.test(t)) return 'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80';
   if (/huevo|tortilla|omelet|revuelto/i.test(t)) return 'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=800&q=80';
   if (/pollo|alita/i.test(t)) return 'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=800&q=80';
-  if (/carne|bistec|asado|lomo|hamburg/i.test(t)) return 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80';
+  if (/carne|bistec|asado|lomo|hamburg|smash/i.test(t)) return 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80';
   if (/pescado|salmon|atun|marisco/i.test(t)) return 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80';
-  if (/sopa|caldo|crema/i.test(t)) return 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80';
-  if (/taco|fajita|burrito|quesadilla/i.test(t)) return 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&fit=crop&w=800&q=80';
+  if (/sopa|caldo|cazuela|crema/i.test(t)) return 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80';
+  if (/taco|fajita|burrito|quesadilla|chilaquiles/i.test(t)) return 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&fit=crop&w=800&q=80';
   if (/ensalada/i.test(t)) return 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80';
+  if (/empanada|arepa|chipa/i.test(t)) return 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=800&q=80';
   if (/pan|tostada|sandwich/i.test(t)) return 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80';
   if (/postre|dulce|pastel|panqueque/i.test(t)) return 'https://images.unsplash.com/photo-1506084868230-bb9d95c24759?auto=format&fit=crop&w=800&q=80';
   return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80';
@@ -2153,6 +2157,306 @@ REGLAS CRÍTICAS PARA CHEF CERO (FILOSOFÍA PANTRY-FIRST Y VOZ):
         },
       ],
     });
+  }
+});
+
+// Helper para generar fallback estructurado de gastronomía de cualquier país si Gemini está inaccesible
+function generateLocalWorldCuisineFallback(countryName: string, flag = '🌍', continent = 'Mundial') {
+  const dishesByCountry: Record<string, Array<{ title: string; desc: string; secret: string }>> = {
+    Tailandia: [
+      {
+        title: 'Pad Thai Express Casero',
+        desc: 'Fideos de arroz salteados con huevo, brotes crujientes y un balance agridulce irresistible en 12 minutos.',
+        secret: 'Remojar los fideos en agua tibia (nunca hervirlos antes) para que terminen de cocinarse en la sartén absorbiendo la salsa.',
+      },
+      {
+        title: 'Pollo al Curry Amarillo Suave con Leche de Coco',
+        desc: 'Un guiso sedoso y aromático con papas y pollo tierno, adaptado con especias suaves para principiantes.',
+        secret: 'Cocinar la pasta de curry 1 minuto en la grasa densa de la leche de coco antes de agregar el resto para despertar los aromas.',
+      },
+      {
+        title: 'Arroz Salteado Jazmín al Estilo Callejero de Bangkok',
+        desc: 'Arroz suelto y dorado al wok con huevo, cebollín y un toque cítrico de lima fresca.',
+        secret: 'Usar arroz frío de la víspera para que los granos no se apelmacen al saltear.',
+      },
+    ],
+    Grecia: [
+      {
+        title: 'Pastel Rápido de Espinacas y Queso Feta (Spanakopita Express)',
+        desc: 'Espinacas pochadas con cebollín, hierbabuena y queso feta crujiente en sartén sin horno.',
+        secret: 'Exprimir muy bien el agua de las espinacas para que el relleno quede cremoso y no aguanoso.',
+      },
+      {
+        title: 'Souvlaki de Pollo al Limón y Orégano con Salsa Tzatziki',
+        desc: 'Tiras de pechuga marinadas con limón y orégano griego, servidas con salsa de yogur y pepino.',
+        secret: 'Rallar el pepino con sal y escurrirlo con un paño limpio para un tzatziki espeso como crema.',
+      },
+      {
+        title: 'Berenjenas Estofadas a la Griega (Moussaka de Sartén)',
+        desc: 'Berenjenas tiernas doradas con tomate natural, ajo y queso derretido en 15 minutos.',
+        secret: 'Poner sal a las berenjenas 10 minutos antes para eliminar el amargor natural.',
+      },
+    ],
+    Marruecos: [
+      {
+        title: 'Cuscús con Verduras Aromáticas y Canela Sutil',
+        desc: 'Sémola esponjosa hidratada al vapor con zanahoria, calabacín y un toque cálido de comino y canela.',
+        secret: 'Separar los granos de cuscús con un tenedor y una nuez de mantequilla apenas hidratados.',
+      },
+      {
+        title: 'Tajine Rápido de Pollo al Limón Confitado y Aceitunas',
+        desc: 'Muslos de pollo tiernos cocinados a fuego muy lento con cebolla rallada, cúrcuma y aceitunas.',
+        secret: 'Rallar la cebolla en lugar de picarla crea una salsa espesa y aterciopelada sin necesidad de harina.',
+      },
+    ],
+    Japón: [
+      {
+        title: 'Oyakodon Casero (Arroz con Pollo y Huevo Sedoso)',
+        desc: 'El clásico confort food de Tokio: pollo tierno y cebolla cocidos en caldo suave y cubiertos con huevo cremoso.',
+        secret: 'Retirar la sartén cuando el huevo aún esté semi-cuajado; el calor residual del arroz lo deja perfecto.',
+      },
+      {
+        title: 'Yakisoba Callejero en Sartén Común',
+        desc: 'Fideos salteados con repollo crujiente, salsa agridulce japonesa y verduras de alacena.',
+        secret: 'Dorar los fideos primero en la sartén seca antes de agregar las verduras para que tengan textura crujiente.',
+      },
+    ],
+    Colombia: [
+      {
+        title: 'Arepas Caseras Rellenas con Queso Derretido',
+        desc: 'Masa suave de maíz tostada por fuera y suave por dentro con corazón de queso hilado.',
+        secret: 'Dejar reposar la masa con agua tibia 5 minutos antes de armar para que no se agriete al cocinarse.',
+      },
+      {
+        title: 'Arroz con Pollo y Verduras Estilo Campesino',
+        desc: 'Arroz amarillo sazonado con achiote o azafrán, pollo desmechado y vegetales tiernos.',
+        secret: 'Cocinar el arroz en el mismo caldo donde se coció el pollo para quintuplicar el sabor.',
+      },
+    ],
+  };
+
+  const defaultDishes = dishesByCountry[countryName] || [
+    {
+      title: `Plato Tradicional Campesino de ${countryName}`,
+      desc: `Una preparación emblemática y reconfortante de la cocina de ${countryName}, adaptada con ingredientes fáciles de conseguir.`,
+      secret: `El fuego bajo y la paciencia al dorar los aromáticos iniciales es la base del sabor auténtico en ${countryName}.`,
+    },
+    {
+      title: `Guiso Casero Rápido al Estilo de ${countryName}`,
+      desc: `Receta de alacena con base de verduras tiernas y salsa tradicional llena de sazón en 15 minutos.`,
+      secret: `Tener todos los ingredientes medidos antes de encender la hornalla evita que nada se queme.`,
+    },
+    {
+      title: `Salteado Diario con Especias de ${countryName}`,
+      desc: `Fácil, nutritivo y lleno de aroma. Un plato para principiantes que transporta directamente a ${countryName}.`,
+      secret: `Agregar las especias en el aceite caliente durante 20 segundos despierta sus aceites esenciales.`,
+    },
+  ];
+
+  return {
+    countryName,
+    flag: flag || '🌍',
+    continent,
+    tagline: `Auténticos sabores de ${countryName} adaptados paso a paso sin complicaciones.`,
+    goldenRule: `Respetar el orden de cocción: sofreír los aromáticos con calma a fuego medio y no apurar la llama.`,
+    baseAromatics: `Hierbas y condimentos característicos de ${countryName}.`,
+    recipes: defaultDishes.map((d, idx) => {
+      const img = getAppetizingFoodImageUrl(d.title, d.desc);
+      return {
+        id: `world-${countryName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}-${idx}`,
+        title: d.title,
+        description: d.desc,
+        servings: 2,
+        totalTimeMinutes: 15 + idx * 5,
+        difficulty: 'Principiante',
+        countryFlag: flag || '🌍',
+        culturalSecret: d.secret,
+        estimatedCostLabel: 'Económica (<$3.50 USD)',
+        isBudgetFriendly: true,
+        imageUrl: img,
+        finishGalleryUrls: [img],
+        safetyAlerts: ['Controla el fuego', 'Pica todo antes de calentar'],
+        miseEnPlace: [
+          'Ingredientes principales limpios y cortados en platitos',
+          '1 cucharada de aceite o mantequilla',
+          'Pizca de sal y condimentos a mano',
+        ],
+        pantrySubstitutes: [
+          {
+            original: `Ingrediente exótico de ${countryName}`,
+            substitute: 'Alternativa común de despensa sugerida por Chef Cero',
+            reason: 'Mantiene el mismo perfil aromático sin salir a tiendas especializadas.',
+          },
+        ],
+        heatGuideExplanation: 'Fuego medio y bajo para controlar la cocción sin quemar el fondo.',
+        steps: [
+          {
+            stepNumber: 1,
+            title: 'Mise en Place (Fuego apagado)',
+            instruction: 'Asegúrate de tener todos los platitos cortados y listos sobre la mesada antes de encender el fuego.',
+            tip: 'En la cocina de todo el mundo, la tranquilidad de tener todo listo es lo que evita quemar la comida.',
+            heatLevel: 'apagado',
+            timerSeconds: 0,
+            timerLabel: '',
+          },
+          {
+            stepNumber: 2,
+            title: 'Despertar los aromáticos',
+            instruction: 'Calienta la sartén a Fuego Bajo con el aceite. Agrega los aromáticos y cocina 60 segundos hasta sentir fragancia.',
+            tip: 'Si el fuego está muy fuerte, las hierbas y especias se quemarán y quedarán amargas.',
+            heatLevel: 'bajo',
+            timerSeconds: 60,
+            timerLabel: 'Aromáticos',
+          },
+          {
+            stepNumber: 3,
+            title: 'Cocción principal',
+            instruction: 'Agrega los ingredientes principales y cocina a Fuego Medio removiendo de forma constante.',
+            tip: 'Escucha el sonido: debe ser un chisporroteo calmo y constante.',
+            heatLevel: 'medio',
+            timerSeconds: 300,
+            timerLabel: 'Cocción guiada',
+          },
+          {
+            stepNumber: 4,
+            title: 'Reposo y toque final',
+            instruction: 'Apaga el fuego, retira la sartén a una hornalla fría y deja reposar 1 minuto antes de servir.',
+            tip: 'El calor residual asienta la salsa dejándola brillante y cremosa.',
+            heatLevel: 'apagado',
+            timerSeconds: 60,
+            timerLabel: 'Reposo',
+          },
+        ],
+      };
+    }),
+  };
+}
+
+// Endpoint: Catálogo Global de Gastronomía Mundial (Cualquier País del Mundo con IA)
+app.post('/api/recipe/world-catalog', async (req, res) => {
+  try {
+    const { countryName, flag, continent, userLevel = 1, count = 3, excludeTitles = [] } = req.body;
+    if (!countryName) {
+      return res.status(400).json({ error: 'countryName es requerido' });
+    }
+
+    const ai = getAi();
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.json(generateLocalWorldCuisineFallback(countryName, flag, continent));
+    }
+
+    const prompt = `Eres el Maestro Culinario Internacional de Chef Cero.
+El aprendiz quiere explorar y cocinar la auténtica gastronomía de: "${countryName}" (${flag || '🌍'}, Continente: ${continent || 'Mundial'}).
+Nivel culinario del usuario: Nivel ${userLevel} (Principiante que aprende a cocinar sin miedo ni quemar nada).
+${excludeTitles.length > 0 ? `NO repitas estos platos ya mostrados: ${excludeTitles.join(', ')}.` : ''}
+
+Genera exactamente ${count} recetas auténticas, emblemáticas y deliciosas de ${countryName}, adaptadas pedagógicamente para principiantes.
+
+REGLAS DE ORO DE CHEF CERO PARA CADA RECETA:
+1. INGREDIENTES ACCESIBLES Y SUSTITUTOS: Si la receta tradicional lleva algún ingrediente muy específico o difícil de encontrar fuera de ${countryName}, indica siempre un sustituto casero accesible en supermercados comunes en "pantrySubstitutes".
+2. PASO 1 SIEMPRE MISE EN PLACE: El paso 1 DEBE ser con heatLevel: 'apagado', midiendo y picando todo antes de encender la estufa.
+3. CONTROL DE FUEGO Y TIEMPOS EXACTOS: Cada paso debe indicar heatLevel ('apagado', 'bajo', 'medio', 'alto'), segundos de temporizador y un tip claro para no quemar la comida.
+4. SECRETO CULTURAL AUTÉNTICO: Explica el truco tradicional que las abuelas o cocineros de ${countryName} usan para que quede con verdadero sabor de hogar.
+5. FOTOS Y PRESENTACIÓN: Títulos apetitosos sin tecnicismos innecesarios.`;
+
+    const response = await callGeminiWithFallback(ai, {
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            countryName: { type: Type.STRING },
+            flag: { type: Type.STRING },
+            tagline: { type: Type.STRING, description: 'Lema corto sobre la identidad de sabor de este país' },
+            goldenRule: { type: Type.STRING, description: 'La regla de oro culinaria que garantiza el éxito en esta cocina' },
+            baseAromatics: { type: Type.STRING, description: 'Los aromáticos base de esta gastronomía' },
+            recipes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  servings: { type: Type.INTEGER },
+                  totalTimeMinutes: { type: Type.INTEGER },
+                  difficulty: { type: Type.STRING },
+                  countryFlag: { type: Type.STRING },
+                  culturalSecret: { type: Type.STRING },
+                  estimatedCostLabel: { type: Type.STRING },
+                  isBudgetFriendly: { type: Type.BOOLEAN },
+                  safetyAlerts: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  miseEnPlace: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  pantrySubstitutes: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        original: { type: Type.STRING },
+                        substitute: { type: Type.STRING },
+                        reason: { type: Type.STRING },
+                      },
+                      required: ['original', 'substitute', 'reason'],
+                    },
+                  },
+                  heatGuideExplanation: { type: Type.STRING },
+                  steps: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        stepNumber: { type: Type.INTEGER },
+                        title: { type: Type.STRING },
+                        instruction: { type: Type.STRING },
+                        tip: { type: Type.STRING },
+                        heatLevel: { type: Type.STRING },
+                        timerSeconds: { type: Type.INTEGER },
+                        timerLabel: { type: Type.STRING },
+                      },
+                      required: ['stepNumber', 'title', 'instruction', 'tip', 'heatLevel'],
+                    },
+                  },
+                },
+                required: ['title', 'description', 'servings', 'totalTimeMinutes', 'difficulty', 'culturalSecret', 'miseEnPlace', 'steps'],
+              },
+            },
+          },
+          required: ['countryName', 'tagline', 'goldenRule', 'recipes'],
+        },
+      },
+    });
+
+    const parsed = safeParseGeminiJson(response.text, null as any);
+    if (!parsed || !parsed.recipes || parsed.recipes.length === 0) {
+      return res.json(generateLocalWorldCuisineFallback(countryName, flag, continent));
+    }
+
+    parsed.recipes = parsed.recipes.map((r: any, idx: number) => {
+      const finalImg = getAppetizingFoodImageUrl(r.title, r.description);
+      return {
+        ...r,
+        id: r.id || `world-${countryName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}-${idx}`,
+        countryFlag: r.countryFlag || flag || '🌍',
+        imageUrl: r.imageUrl || finalImg,
+        finishGalleryUrls: [finalImg],
+        cuisineName: countryName,
+        isBudgetFriendly: r.isBudgetFriendly ?? true,
+        estimatedCostLabel: r.estimatedCostLabel || 'Económica (<$3.50 USD)',
+        safetyAlerts: r.safetyAlerts || ['Controla el fuego', 'Pica todo antes de encender la hornalla'],
+        heatGuideExplanation: r.heatGuideExplanation || 'Fuego controlado para cocinar con tranquilidad.',
+      };
+    });
+
+    return res.json(parsed);
+  } catch (err: any) {
+    console.warn('Chef Cero: Error en /api/recipe/world-catalog:', err?.message);
+    const countryName = req.body?.countryName || 'Mundial';
+    const flag = req.body?.flag || '🌍';
+    const continent = req.body?.continent || 'Mundo';
+    return res.json(generateLocalWorldCuisineFallback(countryName, flag, continent));
   }
 });
 

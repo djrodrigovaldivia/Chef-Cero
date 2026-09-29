@@ -6,7 +6,6 @@ import { SimpleModeView } from './components/SimpleModeView';
 import { FridgeScannerModal, ScannerMode } from './components/FridgeScannerModal';
 import { TechniquesShowcaseModal } from './components/TechniquesShowcaseModal';
 import { FoodInspectorTab } from './components/FoodInspectorTab';
-import { SchoolAndNotebookTab } from './components/SchoolAndNotebookTab';
 import { ShoppingListModal } from './components/ShoppingListModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 import { FloatingVoiceBar } from './components/FloatingVoiceBar';
@@ -15,6 +14,7 @@ import { AccessibleSubtitles } from './components/AccessibleSubtitles';
 import { WeeklyMealPlannerModal } from './components/WeeklyMealPlannerModal';
 import { VisualTechniqueLoopModal } from './components/VisualTechniqueLoopModal';
 import { RecipeImportModal } from './components/RecipeImportModal';
+import { InstallPrompt, FooterInstallButton } from './components/InstallPrompt';
 import { registerChefServiceWorker } from './utils/pushNotifications';
 import { STARTER_RECIPES } from './data/recipeData';
 import { Mic, ChefHat, Sparkles } from 'lucide-react';
@@ -298,7 +298,6 @@ export default function App() {
                 onClearIncomingTimer={() => setIncomingTimer(null)}
                 onLearnFact={handleLearnFact}
                 externalSelectedRecipe={selectedRecipeForCooking}
-                onNavigateToAutor={() => setActiveTab('escuela')}
               />
             </div>
           ) : (
@@ -341,17 +340,6 @@ export default function App() {
               setVoiceContext(undefined);
               setIsVoiceOpen(true);
             }}
-          />
-        )}
-
-        {/* 3. PESTAÑA ESCUELA & CUADERNO DE APRENDIZ */}
-        {activeTab === 'escuela' && (
-          <SchoolAndNotebookTab
-            userProfile={userProfile}
-            onUpdateProfile={handleUpdateProfile}
-            onLearnFact={handleLearnFact}
-            onRemoveFact={handleRemoveFact}
-            onOpenVisualLoops={() => setIsVisualLoopsOpen(true)}
           />
         )}
       </main>
@@ -437,6 +425,9 @@ export default function App() {
       {/* Indicador de Estado Sin Conexión (Caché Offline activa) */}
       <OfflineIndicator />
 
+      {/* Banner / Prompt de Instalación PWA (Android / iOS / Desktop) */}
+      <InstallPrompt />
+
       {/* Subtítulos Accesibles en Pantalla (Modo Silencioso / Closed Captions) */}
       <AccessibleSubtitles />
 
@@ -448,8 +439,11 @@ export default function App() {
             <span className="font-bold text-stone-700 font-serif">Chef Cero</span>
             <span>— Tu mentor culinario para cocinar sin miedo y desde cero</span>
           </div>
-          <div className="text-[11px] text-stone-400">
-            Inteligencia Artificial Gemini con voz en tiempo real y memoria evolutiva
+          <div className="flex items-center gap-3">
+            <FooterInstallButton />
+            <span className="text-[11px] text-stone-400">
+              Inteligencia Artificial Gemini con voz en vivo
+            </span>
           </div>
         </div>
       </footer>

@@ -36,3 +36,25 @@ a[href*="netlify.com"] {
   visibility: hidden !important;
   z-index: -9999 !important;
 }
+
+/* Reglas de impresión limpias para fichas técnicas de recetas (PDF / Papel) */
+@media print {
+  header, nav, aside, #floating-voice-bar, .print\:hidden {
+    display: none !important;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    padding: 0 !important;
+  }
+
+  .print\:p-0 {
+    padding: 0 !important;
+  }
+
+  .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

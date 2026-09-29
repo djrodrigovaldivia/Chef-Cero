@@ -17,6 +17,7 @@ export interface HandsFreeVoiceCallbacks {
   onStartTimer: (seconds?: number) => void;
   onPauseTimer: () => void;
   onEmergency: () => void;
+  onSilence?: () => void;
   onStatusChange?: (isListening: boolean, lastHeardWord?: string) => void;
   onCommandExecuted?: (commandName: string, transcript: string) => void;
   onKitchenNoiseDetected?: (noiseType: string) => void;
@@ -268,14 +269,42 @@ export class HandsFreeCookingListener {
       return true;
     }
 
-    // 6. Emergencia S.O.S. (Humo, fuego, quemado)
+    // 6. Silencio inmediato / Detener audio o alarmas
     if (
-      t.includes('emergencia') ||
-      t.includes('socorro') ||
-      t.includes('humo') ||
+      t.includes('silencio') ||
+      t.includes('callate') ||
+      t.includes('mudo') ||
+      t.includes('mute') ||
+      t.includes('apaga la alarma') ||
+      t.includes('para la alarma') ||
+      t.includes('quita el sonido')
+    ) {
+      this.lastTriggeredTime = now;
+      this.callbacks.onCommandExecuted?.('silencio', text);
+      if (this.callbacks.onSilence) {
+        this.callbacks.onSilence();
+      } else {
+        if (typeof window !== 'undefined' && (window as any).hardStopChefAudio) {
+          (window as any).hardStopChefAudio();
+        }
+      }
+      return true;
+    }
+
+    // 7. Emergencia S.O.S. (Interrupción rápida en tiempo real: Humo, fuego, quemado, auxilio)
+    if (
+      t.includes('chef auxilio') ||
       t.includes('se quema') ||
-      t.includes('fuego') ||
+      t.includes('se me quema') ||
+      t.includes('se esta quemando') ||
+      t.includes('emergencia') ||
       t.includes('auxilio') ||
+      t.includes('socorro') ||
+      t.includes('fuego') ||
+      t.includes('humo') ||
+      t.includes('apaga todo') ||
+      t.includes('apagar todo') ||
+      t.includes('peligro') ||
       t.includes('ayuda') ||
       t.includes('sos')
     ) {
