@@ -1371,11 +1371,11 @@ export const CookingMode: React.FC<CookingModeProps> = ({
 
           {/* Recipe Header Card with Safety Alerts & Details (Efecto Revista Culinaria) */}
           <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-md">
-            <div className="relative h-56 sm:h-72 w-full bg-stone-900">
+            <div className="food-image-container relative h-56 sm:h-72 w-full bg-stone-900">
               <img
                 src={selectedRecipe.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'}
                 alt={selectedRecipe.title}
-                className="w-full h-full object-cover opacity-90"
+                className="recipe-hero-image w-full h-full object-cover opacity-95"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   const target = e.currentTarget;
@@ -1385,7 +1385,7 @@ export const CookingMode: React.FC<CookingModeProps> = ({
                   }
                 }}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/50 to-transparent flex items-end p-5 sm:p-7">
+              <div className="absolute inset-0 z-10 flex items-end p-5 sm:p-7">
                 <div className="space-y-1.5 w-full">
                   {selectedRecipe.magazineEditorialKicker && (
                     <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 font-serif">

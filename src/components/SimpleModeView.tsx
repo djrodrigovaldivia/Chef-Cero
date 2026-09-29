@@ -763,12 +763,12 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
                   onClick={() => onSelectRecipe(recipe)}
                   className="bg-white rounded-3xl border border-stone-200 overflow-hidden hover:border-amber-400 hover:shadow-lg transition-all duration-300 cursor-pointer flex flex-col group active:scale-[0.99]"
                 >
-                  {/* Imagen Apetitosa en 16:9 */}
-                  <div className="relative h-44 w-full bg-stone-100 overflow-hidden">
+                  {/* Imagen Apetitosa en 16:9 con Gradiente y Filtros */}
+                  <div className="food-image-container relative h-44 w-full bg-stone-900 overflow-hidden">
                     <img
                       src={recipe.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'}
                       alt={recipe.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      className="recipe-hero-image w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       loading="lazy"
                       onError={(e) => {
                         const target = e.currentTarget;
@@ -779,8 +779,8 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
                       }}
                     />
                     
-                    {/* Metadata limpia sobre la foto */}
-                    <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                    {/* Metadata limpia sobre la foto con legibilidad garantizada */}
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
                       <span className="bg-stone-900/85 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1">
                         <Clock className="w-3 h-3 text-amber-400" />
                         <span>{recipe.totalTimeMinutes} min</span>
@@ -792,7 +792,7 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
                       )}
                     </div>
 
-                    <div className="absolute bottom-2.5 right-2.5 bg-stone-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-lg">
+                    <div className="absolute bottom-2.5 right-2.5 bg-stone-900/85 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-lg z-10 border border-white/10">
                       {recipe.difficulty}
                     </div>
                   </div>
@@ -1016,11 +1016,11 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
                   onClick={() => onSelectRecipe(recipe)}
                   className="bg-white rounded-3xl border border-stone-200 overflow-hidden hover:border-amber-400 hover:shadow-md transition cursor-pointer flex flex-col group active:scale-[0.99]"
                 >
-                  <div className="relative h-40 w-full bg-stone-100 overflow-hidden">
+                  <div className="food-image-container relative h-44 w-full bg-stone-900 overflow-hidden">
                     <img
                       src={recipe.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'}
                       alt={recipe.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="recipe-hero-image w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       loading="lazy"
                       onError={(e) => {
                         const target = e.currentTarget;
@@ -1031,7 +1031,7 @@ export const SimpleModeView: React.FC<SimpleModeViewProps> = ({
                       }}
                     />
                     
-                    <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
                       <span className="bg-stone-900/85 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1">
                         <Clock className="w-3 h-3 text-amber-400" />
                         <span>{recipe.totalTimeMinutes} min</span>
